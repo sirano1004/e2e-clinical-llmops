@@ -31,7 +31,7 @@ class TranscriberService:
         # 'large-v2' offers the best trade-off for medical terminology accuracy.
         try:
             self.model = whisperx.load_model(
-                "large-v2", 
+                settings.whisper_model_size, 
                 self.device, 
                 compute_type=self.compute_type,
                 language="en" # Force English for consistency in this MVP

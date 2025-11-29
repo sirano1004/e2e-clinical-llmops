@@ -36,3 +36,6 @@ logs/
 *.wav
 *.mp3
 temp_*
+
+# --- Other ---
+*.pem

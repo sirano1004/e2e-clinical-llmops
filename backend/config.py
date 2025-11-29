@@ -49,7 +49,6 @@ class Settings(BaseSettings):
     # ==========================================
     transcription_provider: str = "local_whisper"
     whisper_model_size: str = "small.en"
-    whisper_device: str = "cpu"
 
     # ==========================================
     # 5. SECRETS (Aliases match .env exactly)
