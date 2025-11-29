@@ -1,0 +1,38 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+.DS_Store
+.vscode/
+.idea/
+*.pyc
+
+# --- Environment & Secrets ---
+.env
+.venv/
+venv/
+env/
+
+# --- Heavy AI Files ---
+*.pt
+*.pth
+*.bin
+*.safetensors
+*.onnx
+*.engine
+*.trt
+
+# --- Downloaded Models & Data ---
+hf_model_path/
+trt_engine_output/
+trt_lora_checkpoints/
+data/
+logs/
+
+# --- Whisper/Audio ---
+*.wav
+*.mp3
+temp_*
