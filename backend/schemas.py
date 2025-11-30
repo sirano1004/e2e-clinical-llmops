@@ -14,7 +14,7 @@ class WordInfo(BaseModel):
     word: str
     start: float
     end: float
-    confidence: float
+    is_unclear: bool
 
 class SegmentInfo(BaseModel):
     id: int
