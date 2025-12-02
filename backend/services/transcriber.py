@@ -50,24 +50,14 @@ class TranscriberService:
             print(f"❌ Failed to load Whisper model: {e}")
             raise
 
-        # 2. Load Diarization Model (PyAnnote)
-        # This requires a valid HF_TOKEN in .env with access to 'pyannote/speaker-diarization-3.1'
-        print(" We are skipping Diarization Model loading for now...")
-        self.diarize_model = None
-        # print("⏳ Loading Diarization Model...")
-        # try:
-        #     self.diarize_model = whisperx.DiarizationPipeline(
-        #         use_auth_token=settings.hf_token,
-        #         device=self.device
-        #     )
-        #     print("✅ Diarization pipeline loaded.")
-        # except Exception as e:
-        #     print(f"⚠️ Warning: Diarization model failed to load. Check HF_TOKEN permissions. Error: {e}")
-        #     self.diarize_model = None
+        # 2. Diarization Model Removed
+        # We now rely on the LLM (Brain) to infer speakers from context later.
+        self.diarize_model = None 
+        print("⏩ Skipping Diarization Model (handled by LLM).")
         
         print("🧠 Loading Spacy for Smart Formatting...")
         try:
-            # disable=['ner', 'parser']로 설정하면 속도가 엄청 빠릅니다 (태깅만 함)
+            # disable=['ner', 'parser']
             self.nlp = spacy.load("en_core_web_lg", disable=["ner", "parser"])
         except:
             self.nlp = None
@@ -102,12 +92,10 @@ class TranscriberService:
             # We must delete the alignment model immediately to free VRAM for vLLM.
             torch.cuda.empty_cache()
 
-            # --- Step 3: Diarize (Speaker ID) ---
-            if self.diarize_model:
-                diarize_segments = self.diarize_model(audio)
-                # Assign speaker labels to the aligned word segments
-                result = whisperx.assign_word_speakers(diarize_segments, result)
-
+            # --- Step 3: Diarize (Speaker ID) - REMOVED ---
+            # We skip the heavy diarization model.
+            # Raw segments imply "Unknown Speaker" until LLM processes them.
+            
             # --- Step 4: Format for Schema ---
             return self._format_response(result, confidence_threshold)
 
@@ -131,9 +119,16 @@ class TranscriberService:
         # Define important POS tags to monitor (Numbers, Proper Nouns, Nouns, Adjectives)
         CRITICAL_POS_TAGS = ["NUM", "PROPN", "NOUN", "ADJ"]
 
+        IGNORE_WORDS = {
+            "i", "you", "he", "she", "it", "we", "they", "my", "your", "his", "her", "its", "our", "their", # Pronouns
+            "and", "but", "or", "so", "because", "if", "then", "with", "at", "on", "in", "to", "for", "of", # Conjunctions/Prepositions
+            "yeah", "yep", "yes", "no", "nah", "okay", "ok", "right", "sure", # Affirmations
+            "um", "uh", "ah", "hmm", "oh", "like", "well", "just" # Fillers
+        }
+
         for segment in result["segments"]:
-            # Default to "UNKNOWN" if diarization failed or wasn't run
-            speaker = segment.get("speaker", "UNKNOWN")
+            # Default placeholder. The LLM will assign "Doctor" or "Patient" later.
+            speaker = "TBD"
             segment_text = segment.get("text", "")
 
             # NLP Analysis for context-aware POS tagging
@@ -149,14 +144,19 @@ class TranscriberService:
                     word_text = w.get("word", "")
                     conf = round(w.get("score", 0.0), 2)
                     clean_word = word_text.strip()
-                    
+                    clean_word_lower = clean_word.lower().replace(".", "").replace(",", "").replace("?", "").replace("!", "")
+
                     # --- 🧠 Smart Logic (Calculate ONCE) ---
                     is_significant = False
                     
-                    # Check POS tag if available
-                    if doc and i < len(spacy_tokens):
-                        pos = spacy_tokens[i].pos_
-                        if pos in CRITICAL_POS_TAGS:
+                    # 🚨 Check 1: Is it in the Ignore List? (Priority 1)
+                    if clean_word_lower in IGNORE_WORDS:
+                        is_significant = False
+                        
+                    # Check 2: Spacy Analysis (Priority 2)
+                    elif doc and i < len(spacy_tokens):
+                        token = spacy_tokens[i]
+                        if token.pos_ in CRITICAL_POS_TAGS and not token.is_stop:
                             is_significant = True
                     else:
                         # Fallback heuristic: length > 3 implies potential significance

@@ -32,22 +32,27 @@ class TranscriptionResponse(BaseModel):
     # This goes to the UI (For red underlines)
     raw_segments: List[SegmentInfo] = Field(..., description="Metadata for UI highlighting")
 
+# --- HELPER: Strict SOAP Structure ---
+# This ensures your SOAP note always has these 4 keys.
+class SOAPNote(BaseModel):
+    # Using List[str] for bullet points as requested
+    subjective: List[str] = Field(default_factory=list)
+    objective: List[str] = Field(default_factory=list)
+    assessment: List[str] = Field(default_factory=list)
+    plan: List[str] = Field(default_factory=list)
+
 # --- 2. Input ---
 class ScribeRequest(BaseModel):
     session_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     dialogue_history: List[DialogueTurn]
     
+    # The existing SOAP note state to be updated
+    # Can be a JSON string or raw text
+    existing_notes: Optional[SOAPNote] = None
+    
     # Task determines output format
-    task_type: Literal["soap", "discharge", "referral", "certification"] = "soap"
+    task_type: Literal["soap", "soap_final", "referral", "certificate"] = "soap"
     temperature: float = 0.7
-
-# --- HELPER: Strict SOAP Structure ---
-# This ensures your SOAP note always has these 4 keys.
-class SOAPNote(BaseModel):
-    subjective: str
-    objective: str
-    assessment: str
-    plan: str
 
 # --- 3. Output (Dynamic) ---
 class ScribeResponse(BaseModel):

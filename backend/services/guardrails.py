@@ -14,7 +14,9 @@ class GuardrailService:
     
     Strategy:
     1. Medical NER: Uses 'd4data/biomedical-ner-all' (BERT-based) via HF Pipeline.
-    2. Medical NLI: Uses 'walteou/DeBERTa-v3-base-mednli' (DeBERTa-based) via CrossEncoder.
+    2. NLI Check: 'cross-encoder/nli-deberta-v3-base' (General SOTA)
+    * Why General? It detects logical contradictions (negation) better 
+    than embeddings, and open-source medical cross-encoders are rare.
     """
 
     def __init__(self):
@@ -28,7 +30,7 @@ class GuardrailService:
             self.ner_pipeline = pipeline(
                 "token-classification", 
                 model="d4data/biomedical-ner-all", 
-                aggregation_strategy="simple",
+                aggregation_strategy="first",
                 device=-1 # Run on CPU (-1) to save GPU for vLLM
             )
             print("✅ Medical NER pipeline loaded.")
@@ -38,12 +40,12 @@ class GuardrailService:
 
         # 2. Load Medical NLI Model (Cross-Encoder)
         try:
-            model_id = "walteou/DeBERTa-v3-base-mednli"
+            model_id = "cross-encoder/nli-deberta-v3-base"
             print(f"🛡️ Loading Medical NLI Model ({model_id})...")
             self.nli_model = CrossEncoder(model_id, device='cpu')
             
-            # MedNLI Label Mapping: 0: Entailment, 1: Neutral, 2: Contradiction
-            self.label_map = {0: "entailment", 1: "neutral", 2: "contradiction"}
+            # MedNLI Label Mapping: 0: Contradiction, 1: Entailment, 2: Neutral
+            self.label_map = {0: "contradiction", 1: "entailment", 2: "neutral"}
             print("✅ Medical NLI model loaded.")
         except Exception as e:
             print(f"❌ Failed to load NLI model: {e}")
@@ -96,8 +98,19 @@ class GuardrailService:
         def get_medical_entities(results: List[Dict]) -> Set[str]:
             entities = set()
             # Valid labels in 'd4data/biomedical-ner-all' relevant to hallucination:
-            # We care about: Disease_disorder, Medication, Sign_symptom, Diagnostic_procedure
-            target_labels = ["Disease_disorder", "Medication", "Sign_symptom", "Diagnostic_procedure"]
+            target_labels = [
+                "Disease_disorder",       
+                "Medication",             
+                "Sign_symptom",           
+                "Diagnostic_procedure",   
+                "Biological_structure",   
+                "Severity",               
+                "Date",                   
+                "Duration",               
+                "Frequency",              
+                "Dosage",                 
+                # "Administration_route"  
+            ]
             
             for item in results:
                 label = item.get('entity_group')

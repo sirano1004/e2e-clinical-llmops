@@ -1,23 +1,31 @@
-from . import soap, discharge
+# backend/prompts/__init__.py
+from . import soap, referral, scribe_system, role_service, certificate
 
-# 1. Central Registry
-# This maps the 'task_type' string to the module
-PROMPT_REGISTRY = {
-    "soap": soap,
-    "discharge": discharge,
+# 1. System Prompt Router
+SYSTEM_REGISTRY = {
+    "role_service": role_service, 
+    "soap": scribe_system,
+    "soap_final": scribe_system,
+    "referral": scribe_system,     # Referral also uses the generic Scribe identity
+    "certificate": scribe_system   # Certificate also uses the generic Scribe identity
 }
 
-DEFAULT_PROMPT = "You are a helpful medical assistant."
+# 2. Suffix Registry
+SUFFIX_REGISTRY = {
+    "soap": soap,
+    "soap_final": soap,
+    "referral": referral,
+    "certificate": certificate
+}
 
 def get_system_prompt(task_type: str) -> str:
-    """
-    Retrieves the prompt for the given task.
-    If the task module has a 'get_prompt' function, use it.
-    Otherwise, fall back.
-    """
-    module = PROMPT_REGISTRY.get(task_type)
-    
-    if module and hasattr(module, "get_prompt"):
+    module = SYSTEM_REGISTRY.get(task_type)
+    if hasattr(module, "get_prompt"):
         return module.get_prompt()
-    
-    return DEFAULT_PROMPT
+    return "You are a helpful medical assistant."
+
+def get_suffix_prompt(task_type: str, context: str = "None") -> str:
+    module = SUFFIX_REGISTRY.get(task_type)
+    if module and hasattr(module, "get_suffix"):
+        return module.get_suffix(task_type, context)
+    return ""

@@ -23,7 +23,7 @@ from ..schemas import (
     SOAPNote
 ) 
 # Import prompt for each task
-from ..prompts import get_system_prompt
+from ..prompts import get_system_prompt, get_suffix_prompt
 
 
 class LLMHandler:
@@ -143,7 +143,7 @@ class LLMHandler:
     # HIGH-LEVEL ORCHESTRATION (Task Specific)
     # ====================================================================
 
-    async def generate_scribe(self, request: ScribeRequest, previous_summary: Optional[str]) -> ScribeResponse:
+    async def generate_scribe(self, request: ScribeRequest) -> ScribeResponse:
         """
         Orchestrates the Scribing task:
         1. Determines which LoRA adapter to use based on task_type.
@@ -156,15 +156,17 @@ class LLMHandler:
         # --- 1. Dynamic LoRA Routing ---
         lora_request_object = None
         # Look up the adapter name from the task map (e.g., "soap" -> "lora_path")
-        lora_path = settings.lora_adapters.get(request.task_type)
-        
+        # Map "soap_final" to the same adapter as "soap" if needed
+        adapter_key = "soap" if "soap" in request.task_type else request.task_type        
+        lora_path = settings.lora_adapters.get(adapter_key)
+
         # Check if LoRA is enabled, mapped, and path exists
-        if settings.vllm_enable_lora and lora_path and request.task_type in self.lora_id_map:
+        if settings.vllm_enable_lora and lora_path and adapter_key in self.lora_id_map:
             
             if lora_path:
                 lora_request_object = LoRARequest(
-                    lora_name=request.task_type,                 
-                    lora_int_id=self.lora_id_map.get(request.task_type), # Use pre-calculated unique ID
+                    lora_name=adapter_key,                 
+                    lora_int_id=self.lora_id_map.get(adapter_key), # Use pre-calculated unique ID
                     lora_local_path=lora_path              
                 )
                 # Logging routing decision for debugging
@@ -188,27 +190,23 @@ class LLMHandler:
             # Format: "Doctor: content"
             formatted_content = f"{turn.role.upper()}: {turn.content}"
             messages.append({"role": "user", "content": formatted_content})
-
-        # 3. Handling Iterative Updates
-        if previous_summary:
-            messages.append({
-                        "role": "user", 
-                        "content": f"Here is the existing clinical summary so far:\n{previous_summary}"
-                    })
-            
-            messages.append({
-                "role": "user", 
-                "content": f"Based on the conversation and the summary above, generate a {request.task_type.upper()}."
-            })
-
+        
+        # 3. Context Serialization
+        # Convert the SOAPNote object to a JSON string for the LLM to read.
+        if request.existing_notes:
+            # Ensure we serialize it to a formatted JSON string
+            context_str = request.existing_notes.model_dump_json(indent=2)
         else:
-            # First time generation
-            messages.append({
-                "role": "user", 
-                "content": f"Generate a {request.task_type.upper()} note based on the conversation."
-            })
+            context_str = "None"
 
-        # --- 3. Execution ---
+        # 4. Suffix Strategy (Task-Specific Instructions)
+        # The instruction is appended at the very end.
+        suffix_prompt = get_suffix_prompt(request.task_type, context_str)
+
+        # Append the specific instruction as the last user message
+        messages.append({"role": "user", "content": suffix_prompt})
+
+        # 5. Execution
         # full_prompt passed from app.py already contains the Dialogue History
         raw_response = await self._execute_prompt(
             messages=messages,
@@ -218,9 +216,9 @@ class LLMHandler:
         
         duration = (time.time() - start_time) * 1000
 
-        # --- 4. Validation & Formatting ---
+        # 6. Validation & Formatting
         # Parse the raw text into structured data (SOAPNote or Dict)
-        parsed_summary = self._parse_output(raw_response, request.task_type)
+        parsed_summary = self._parse_output(raw_response, adapter_key)
 
         return ScribeResponse(
             session_id=request.session_id,
@@ -243,7 +241,7 @@ class LLMHandler:
         Parses LLM output. If task is SOAP, attempts to extract and validate JSON.
         Returns raw text if parsing fails to prevent app crash.
         """
-        if task_type == "soap":
+        if task_type in ["soap", "soap_final"]:
             try:
                 # Regex to find the first JSON object in the output (ignoring Markdown)
                 json_match = re.search(r"\{.*\}", raw_text, re.DOTALL)

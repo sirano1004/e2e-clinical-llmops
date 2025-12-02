@@ -47,22 +47,27 @@ class Settings(BaseSettings):
     # ==========================================
     # 4. AUDIO SETTINGS
     # ==========================================
-    transcription_provider: str = "local_whisper"
     whisper_model_size: str = "small.en"
 
     # ==========================================
-    # 5. SECRETS (Aliases match .env exactly)
+    # 5. SECRETS
     # ==========================================
     hf_token: str = Field(..., alias="HF_TOKEN")
     ngrok_auth_token: str = Field(..., alias="NGROK_AUTH_TOKEN")
 
     # ==========================================
-    # 6. DATA PATHS (Your 3-Way Strategy)
+    # 6. DATA PATHS
     # ==========================================
     raw_log_path: str = Field(..., alias="RAW_LOG_PATH")
     sft_log_path: str = Field(..., alias="SFT_LOG_PATH")
     dpo_log_path: str = Field(..., alias="DPO_LOG_PATH")
 
+    # ==========================================
+    # 7. REDIS (Memory)
+    # ==========================================
+    redis_host: str = Field("localhost", alias="REDIS_HOST")
+    redis_port: int = Field(6379, alias="REDIS_PORT")
+    redis_db: int = Field(0, alias="REDIS_DB")
     # ==========================================)
 
     # Load from .env file

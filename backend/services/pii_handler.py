@@ -2,7 +2,7 @@ from typing import List
 from presidio_analyzer import AnalyzerEngine, PatternRecognizer, Pattern, RecognizerRegistry
 from presidio_anonymizer import AnonymizerEngine
 from presidio_anonymizer.entities import OperatorConfig
-from schemas import DialogueTurn
+from ..schemas import DialogueTurn
 
 class MedicalPIIHandler:
     def __init__(self):
