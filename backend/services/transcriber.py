@@ -7,9 +7,9 @@ import spacy
 import ssl
 ssl._create_default_https_context = ssl._create_unverified_context
 # --- Project Imports (Relative Paths) ---
-from ..config import settings
+from ..core.config import settings
 from ..schemas import DialogueTurn
-
+from ..core.logger import logger
 class TranscriberService:
     """
     Manages the WhisperX pipeline for State-of-the-Art Speech-to-Text.
@@ -27,7 +27,7 @@ class TranscriberService:
         self.compute_type = "int8" #"int8" if self.device == "cuda" else "int8"
         self.batch_size = 2 # Adjust based on remaining VRAM
         
-        print(f"🎤 Initializing WhisperX on {self.device} ({self.compute_type})...")
+        logger.info(f"🎤 Initializing WhisperX on {self.device} ({self.compute_type})...")
         
         # 1. Load Whisper Model (ASR)
         # 'large-v2' offers the best trade-off for medical terminology accuracy.
@@ -39,29 +39,29 @@ class TranscriberService:
                 language="en" # Force English for consistency in this MVP
             )
 
-            print("⏳ Loading Alignment Model (English)...")
+            logger.info("⏳ Loading Alignment Model (English)...")
             self.align_model, self.align_metadata = whisperx.load_align_model(
                 language_code="en", 
                 device=self.device
             )
 
-            print("✅ Whisper model loaded.")
+            logger.info("✅ Whisper model loaded.")
         except Exception as e:
-            print(f"❌ Failed to load Whisper model: {e}")
+            logger.exception(f"❌ Failed to load Whisper model: {e}")
             raise
 
         # 2. Diarization Model Removed
         # We now rely on the LLM (Brain) to infer speakers from context later.
         self.diarize_model = None 
-        print("⏩ Skipping Diarization Model (handled by LLM).")
+        logger.info("⏩ Skipping Diarization Model (handled by LLM).")
         
-        print("🧠 Loading Spacy for Smart Formatting...")
+        logger.info("🧠 Loading Spacy for Smart Formatting...")
         try:
             # disable=['ner', 'parser']
             self.nlp = spacy.load("en_core_web_lg", disable=["ner", "parser"])
         except:
             self.nlp = None
-    def transcribe_audio(self, audio_path: str, confidence_threshold: float = 0.6) -> Dict[str, Any]:
+    def transcribe_audio(self, audio_path: str, chunk_index: int, confidence_threshold: float = 0.6) -> Dict[str, Any]:
         """
         Executes the full pipeline: Transcribe -> Align -> Diarize -> Format.
         Returns a dictionary compatible with the TranscriptionResponse schema.
@@ -69,7 +69,7 @@ class TranscriberService:
         if not os.path.exists(audio_path):
             raise FileNotFoundError(f"Audio file not found: {audio_path}")
 
-        print(f"🎧 Processing audio: {audio_path}")
+        logger.info(f"🎧 Processing audio: {audio_path}")
         
         try:
             # --- Step 1: Transcribe (ASR) ---
@@ -97,17 +97,17 @@ class TranscriberService:
             # Raw segments imply "Unknown Speaker" until LLM processes them.
             
             # --- Step 4: Format for Schema ---
-            return self._format_response(result, confidence_threshold)
+            return self._format_response(result, confidence_threshold, chunk_index)
 
         except Exception as e:
-            print(f"❌ Transcription Pipeline Failed: {e}")
+            logger.exception(f"❌ Transcription Pipeline Failed: {e}")
             raise e
         finally:
             # Final garbage collection to ensure no tensors leak
             gc.collect()
             torch.cuda.empty_cache()
 
-    def _format_response(self, result: Dict[str, Any], threshold: float) -> Dict[str, Any]:
+    def _format_response(self, result: Dict[str, Any], threshold: float, chunk_index: int) -> Dict[str, Any]:
         """
         Maps raw WhisperX output to our Pydantic schema structure.
         - Converts raw text into List[DialogueTurn]
@@ -187,7 +187,8 @@ class TranscriberService:
             # This allows app.py to easily swap 'SPEAKER_01' with 'Doctor' later
             conversation_output.append(DialogueTurn(
                 role=speaker,
-                content=formatted_sentence
+                content=formatted_sentence,
+                chunk_index=chunk_index
             ))
             
             # Create UI Metadata Object

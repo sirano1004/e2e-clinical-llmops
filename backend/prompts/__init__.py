@@ -5,7 +5,6 @@ from . import soap, referral, scribe_system, role_service, certificate
 SYSTEM_REGISTRY = {
     "role_service": role_service, 
     "soap": scribe_system,
-    "soap_final": scribe_system,
     "referral": scribe_system,     # Referral also uses the generic Scribe identity
     "certificate": scribe_system   # Certificate also uses the generic Scribe identity
 }
@@ -13,7 +12,6 @@ SYSTEM_REGISTRY = {
 # 2. Suffix Registry
 SUFFIX_REGISTRY = {
     "soap": soap,
-    "soap_final": soap,
     "referral": referral,
     "certificate": certificate
 }

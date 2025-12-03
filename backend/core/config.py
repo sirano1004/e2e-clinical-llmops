@@ -58,9 +58,13 @@ class Settings(BaseSettings):
     # ==========================================
     # 6. DATA PATHS
     # ==========================================
-    raw_log_path: str = Field(..., alias="RAW_LOG_PATH")
-    sft_log_path: str = Field(..., alias="SFT_LOG_PATH")
-    dpo_log_path: str = Field(..., alias="DPO_LOG_PATH")
+# 💡 Root directory for storing all data
+    data_dir: str = Field("data_storage", alias="DATA_DIR")
+    
+    # 💡 Filenames for each data type
+    raw_log_file: str = Field("system_logs.jsonl", alias="RAW_LOG_FILE")
+    sft_file: str = Field("sft_train_data.jsonl", alias="SFT_FILE")
+    dpo_file: str = Field("dpo_train_data.jsonl", alias="DPO_FILE")
 
     # ==========================================
     # 7. REDIS (Memory)

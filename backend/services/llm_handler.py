@@ -15,13 +15,16 @@ from transformers import AutoTokenizer
 
 # --- Project Imports (Robust Relative Paths) ---
 # Import settings from the parent backend package
-from ..config import settings
+from ..core.config import settings
 # Import Pydantic models for data validation
 from ..schemas import (
     ScribeRequest, 
     ScribeResponse, 
-    SOAPNote
+    SOAPNote,
+    SOAPItem
 ) 
+# Import Custom Logger
+from ..core.logger import logger
 # Import prompt for each task
 from ..prompts import get_system_prompt, get_suffix_prompt
 
@@ -66,9 +69,9 @@ class LLMHandler:
         # 2. Initialize the AsyncLLMEngine
         # This step downloads the model (if needed) and allocates GPU memory.
         # WARNING: This takes 3-5 minutes and blocks the process during startup.
-        print(f"🔄 Initializing AsyncLLMEngine for model: {settings.vllm_model_name}...")
+        logger.info(f"🔄 Initializing AsyncLLMEngine for model: {settings.vllm_model_name}...")
         self.engine = AsyncLLMEngine.from_engine_args(engine_args)
-        print("✅ AsyncLLMEngine initialized successfully.")
+        logger.info("✅ AsyncLLMEngine initialized successfully.")
 
         # 3. Create LoRA Integer ID Map
         # VLLM requires a unique integer ID for each adapter.
@@ -78,10 +81,10 @@ class LLMHandler:
             name: index + 1 
             for index, name in enumerate(settings.lora_adapters.keys())
         }
-        print(f"✅ LoRA ID Map created: {self.lora_id_map}")
+        logger.info(f"✅ LoRA ID Map created: {self.lora_id_map}")
 
         # 4. Load Tokenizer to apply chat template
-        print(f"Loading tokenizer for: {settings.vllm_model_name}")
+        logger.info(f"Loading tokenizer for: {settings.vllm_model_name}")
         self.tokenizer = AutoTokenizer.from_pretrained(
             settings.vllm_model_name, 
             token=settings.hf_token
@@ -136,7 +139,7 @@ class LLMHandler:
             return final_output.strip()
 
         except Exception as e:
-            print(f"❌ VLLM Execution Error for request {request_id}: {e}")
+            logger.exception(f"❌ VLLM Execution Error for request {request_id}: {e}")
             raise RuntimeError(f"LLM inference failed: {e}") from e
 
     # ====================================================================
@@ -156,7 +159,6 @@ class LLMHandler:
         # --- 1. Dynamic LoRA Routing ---
         lora_request_object = None
         # Look up the adapter name from the task map (e.g., "soap" -> "lora_path")
-        # Map "soap_final" to the same adapter as "soap" if needed
         adapter_key = "soap" if "soap" in request.task_type else request.task_type        
         lora_path = settings.lora_adapters.get(adapter_key)
 
@@ -215,10 +217,14 @@ class LLMHandler:
         )
         
         duration = (time.time() - start_time) * 1000
-
+        
+        # Calculate current chunk index (Source ID)
+        # Assuming the new info comes from the latest chunk added
+        current_chunk_idx = request.chunk_index
+        
         # 6. Validation & Formatting
         # Parse the raw text into structured data (SOAPNote or Dict)
-        parsed_summary = self._parse_output(raw_response, adapter_key)
+        parsed_summary = self._parse_output(raw_response, adapter_key, current_chunk_idx)
 
         return ScribeResponse(
             session_id=request.session_id,
@@ -236,12 +242,12 @@ class LLMHandler:
     # HELPER METHODS
     # ====================================================================
 
-    def _parse_output(self, raw_text: str, task_type: str) -> Union[SOAPNote, Dict[str, Any], str]:
+    def _parse_output(self, raw_text: str, task_type: str, chunk_idx: int = 0) -> Union[SOAPNote, Dict[str, Any], str]:
         """
         Parses LLM output. If task is SOAP, attempts to extract and validate JSON.
         Returns raw text if parsing fails to prevent app crash.
         """
-        if task_type in ["soap", "soap_final"]:
+        if task_type in ["soap"]:
             try:
                 # Regex to find the first JSON object in the output (ignoring Markdown)
                 json_match = re.search(r"\{.*\}", raw_text, re.DOTALL)
@@ -250,19 +256,26 @@ class LLMHandler:
                 # Load JSON
                 data = json.loads(clean_json)
                 
-                # Validate against Pydantic Schema (SOAPNote)
-                return SOAPNote(**data)
+                # Convert raw strings to SOAPItems with ID & Source
+                structured_data = {}
+                for key in ["subjective", "objective", "assessment", "plan"]:
+                    raw_list = data.get(key, [])
+                    item_list = []
+                    for text_content in raw_list:
+                        if isinstance(text_content, str):
+                            # Create Trackable Item
+                            item_list.append(SOAPItem(
+                                text=text_content,
+                                source_chunk_id=chunk_idx
+                            ))
+                    structured_data[key] = item_list
+                
+                return SOAPNote(**structured_data)
             
             except (json.JSONDecodeError, Exception) as e:
-                print(f"⚠️ JSON Parsing Failed: {e}")
+                logger.exception(f"⚠️ JSON Parsing Failed: {e}")
                 # Fallback: Wrap raw text in a dict structure so Frontend can display it
-                return {
-                    "subjective": "PARSING ERROR",
-                    "objective": "Please check raw output.",
-                    "assessment": "",
-                    "plan": "",
-                    "raw_output": raw_text # Pass raw text for manual correction
-                }
+                return SOAPNote()
         
         # For non-structured tasks, return string directly
         return raw_text

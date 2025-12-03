@@ -8,6 +8,7 @@ from ..schemas import DialogueTurn
 
 # Import prompt
 from ..prompts import get_system_prompt
+from ..core.logger import logger
 
 class RoleService:
     """
@@ -33,7 +34,7 @@ class RoleService:
                 "id": i, 
                 "text": turn.content
             })
-            print(f"🏷️ Tagging Roles for {len(conversation)} turns...")
+            logger.info(f"🏷️ Tagging Roles for {len(conversation)} turns...")
 
         # 2. Call LLM to get the ID -> Role mapping
         role_map = await self._get_roles_from_llm(tagged_input)
@@ -81,7 +82,7 @@ async def _get_roles_from_llm(self, inputs: List[Dict]) -> Dict[int, str]:
             return {int(k): v for k, v in raw_map.items()}
 
         except Exception as e:
-            print(f"❌ Role Tagging Failed: {e}")
+            logger.exception(f"❌ Role Tagging Failed: {e}")
             return {}
 
 # Singleton Instance

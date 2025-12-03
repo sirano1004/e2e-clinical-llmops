@@ -8,6 +8,7 @@ class DialogueTurn(BaseModel):
     role: str = Field(..., description="Role: doctor, patient, system, or SPEAKER_XX")
     content: str
     timestamp: datetime = Field(default_factory=datetime.now)
+    chunk_index: int = Field(0, description="The index of the audio chunk this turn belongs to.")
 
 # --- 1. Audio transcription ---
 class WordInfo(BaseModel):
@@ -34,24 +35,38 @@ class TranscriptionResponse(BaseModel):
 
 # --- HELPER: Strict SOAP Structure ---
 # This ensures your SOAP note always has these 4 keys.
+class SOAPItem(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4())[:8])
+    text: str
+    source_chunk_index: int # Track diaologue chunk
+
 class SOAPNote(BaseModel):
-    # Using List[str] for bullet points as requested
-    subjective: List[str] = Field(default_factory=list)
-    objective: List[str] = Field(default_factory=list)
-    assessment: List[str] = Field(default_factory=list)
-    plan: List[str] = Field(default_factory=list)
+    subjective: List[SOAPItem] = Field(default_factory=list)
+    objective: List[SOAPItem] = Field(default_factory=list)
+    assessment: List[SOAPItem] = Field(default_factory=list)
+    plan: List[SOAPItem] = Field(default_factory=list)
+    
+    def merge(self, new_note: 'SOAPNote'):
+        """
+        Merges new items (Deltas) into the existing note.
+        """
+        self.subjective.extend(new_note.subjective)
+        self.objective.extend(new_note.objective)
+        self.assessment.extend(new_note.assessment)
+        self.plan.extend(new_note.plan)
 
 # --- 2. Input ---
 class ScribeRequest(BaseModel):
     session_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     dialogue_history: List[DialogueTurn]
-    
+    chunk_index:int = Field(0, description="The index of the audio chunk this turn belongs to.")
+
     # The existing SOAP note state to be updated
     # Can be a JSON string or raw text
     existing_notes: Optional[SOAPNote] = None
     
     # Task determines output format
-    task_type: Literal["soap", "soap_final", "referral", "certificate"] = "soap"
+    task_type: Literal["soap", "referral", "certificate"] = "soap"
     temperature: float = 0.7
 
 # --- 3. Output (Dynamic) ---

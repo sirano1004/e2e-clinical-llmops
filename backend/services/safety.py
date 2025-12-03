@@ -1,7 +1,7 @@
 import re
 from typing import List, Dict, Any, Optional, Tuple
 from transformers import pipeline
-
+from ..core.logger import logger
 class ClinicalSafetyService:
     """
     Clinical Safety Layer (NER + Knowledge Graph Implementation).
@@ -13,7 +13,7 @@ class ClinicalSafetyService:
     """
 
     def __init__(self):
-        print("🛡️ Initializing Clinical Safety Layer (NER-based)...")
+        logger.info("🛡️ Initializing Clinical Safety Layer (NER-based)...")
         
         # 1. Knowledge Graph (In-Memory MVP)
         # Defines safety limits for common medications.
@@ -35,12 +35,12 @@ class ClinicalSafetyService:
             self.ner_pipeline = pipeline(
                 "token-classification", 
                 model="d4data/biomedical-ner-all", 
-                aggregation_strategy="simple", 
+                aggregation_strategy="first", 
                 device=-1 # Run on CPU to save GPU VRAM for vLLM
             )
-            print("✅ Safety NER pipeline loaded.")
+            logger.info("✅ Safety NER pipeline loaded.")
         except Exception as e:
-            print(f"❌ Failed to load Safety NER: {e}")
+            logger.exception(f"❌ Failed to load Safety NER: {e}")
             self.ner_pipeline = None
 
     def check_safety(self, summary_text: str) -> List[str]:
