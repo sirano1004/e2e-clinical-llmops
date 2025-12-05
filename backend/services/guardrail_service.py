@@ -10,6 +10,7 @@ from sentence_transformers import CrossEncoder
 # --- Project Imports ---
 from ..schemas import DialogueTurn
 from ..core.logger import logger
+from .session_service import session_service
 
 class GuardrailService:
     """
@@ -54,7 +55,7 @@ class GuardrailService:
             logger.exception(f"❌ Failed to load NLI model: {e}")
             self.nli_model = None
 
-    async def check_hallucination(self, transcript: List[DialogueTurn], summary: Union[str, dict]) -> List[str]:
+    async def check_hallucination(self, session_id: str, transcript: List[DialogueTurn], summary: Union[str, dict]) -> List[str]:
         """
         Public Method: Non-blocking wrapper.
         Offloads heavy calculation to a separate thread.
@@ -62,16 +63,12 @@ class GuardrailService:
         # 1. Data Prep (Flattening)
         transcript_text = "\n".join([f"{t.role}: {t.content}" for t in transcript])
         summary_text = self._clean_summary(summary)
-
-        # 2. Run in Executor (Non-blocking)
-        loop = asyncio.get_running_loop()
         
         try:
             logger.info("🛡️ Starting Guardrail Analysis (Threaded)...")
             
             # Use 'None' to use the default ThreadPoolExecutor
-            analysis_result = await loop.run_in_executor(
-                None, 
+            analysis_result = await asyncio.to_thread(
                 self._run_analysis_sync,
                 transcript_text,
                 summary_text
@@ -83,8 +80,12 @@ class GuardrailService:
                 logger.warning(f"⚠️ Guardrail issues: {w_count}. Metrics: {analysis_result['metrics']}")
             else:
                 logger.info(f"✅ Guardrail passed. Metrics: {analysis_result['metrics']}")
+            
+            # Save metrics to redis
+            if analysis_result['metrics']:
+                await session_service.update_metrics(session_id, analysis_result['metrics'])
 
-            return analysis_result
+            return analysis_result['warnings']
 
         except Exception as e:
             logger.exception(f"❌ Guardrail execution failed: {e}")

@@ -27,7 +27,8 @@ from ..schemas import (
 from ..core.logger import logger
 # Import prompt for each task
 from ..prompts import get_system_prompt, get_suffix_prompt
-
+# Import Redis session service
+from .session_service import session_service
 
 class LLMHandler:
     """
@@ -217,6 +218,8 @@ class LLMHandler:
         )
         
         duration = (time.time() - start_time) * 1000
+
+        await session_service.update_metrics(request.session_id, duration, 'total_latency_ms')
         
         # Calculate current chunk index (Source ID)
         # Assuming the new info comes from the latest chunk added
@@ -230,12 +233,7 @@ class LLMHandler:
             session_id=request.session_id,
             interaction_id=f"gen-{time.time()}", 
             generated_summary=parsed_summary,
-            model_used=settings.vllm_model_name,
-            adapter_used=lora_path,
-            processing_time_ms=duration,
-            # Placeholders for post-processing guards
-            safety_warnings=[],
-            hallucination_warnings=[]
+            chunk_index=current_chunk_idx
         )
 
     # ====================================================================

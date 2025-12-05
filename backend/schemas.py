@@ -78,20 +78,15 @@ class ScribeResponse(BaseModel):
     generated_summary: Union[str, SOAPNote, Dict[str, Any]]
     
     # Safety & Quality Checks
-    safety_warnings: List[str] = []
-    hallucination_warnings: List[str] = []
-    citations: Optional[Dict[str, int]] = None
+    chunk_index:int = Field(0, description="The index of the audio chunk this turn belongs to.")
 
     # Metadata
-    model_used: str
-    adapter_used: Optional[str] = None
-    processing_time_ms: float
     created_at: datetime = Field(default_factory=datetime.now)
 
 # --- 4. Feedback (Training Data) ---
 class FeedbackRequest(BaseModel):
     interaction_id: str
-    feedback_type: Literal["thumbs_up", "thumbs_down", "edit"]
+    feedback_type: Literal["accept", "reject", "edit"]
     
     # If SOAP, user might edit the JSON structure, so we allow Dict here too
     edited_summary: Optional[Union[str, SOAPNote, Dict[str, Any]]] = None

@@ -63,6 +63,7 @@ class Settings(BaseSettings):
     
     # 💡 Filenames for each data type
     raw_log_file: str = Field("system_logs.jsonl", alias="RAW_LOG_FILE")
+    metrics_file: str = Field("metrics.jsonl", alias="METRICS_FILE")
     sft_file: str = Field("sft_train_data.jsonl", alias="SFT_FILE")
     dpo_file: str = Field("dpo_train_data.jsonl", alias="DPO_FILE")
 
