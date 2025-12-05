@@ -186,7 +186,7 @@ class FeedbackService:
         # 4. Save to System Log
         await local_storage.append_record(settings.metrics_file, log_record)
         
-        logger.info(f"📊 Session Metrics Saved. Recall: {recall:.2%}, Feedback Count: {feedback_count}")
+        logger.info(f"📊 Session Metrics Saved. Recall: {recall:.2%}")
 
     def _calculate_edit_metrics(self, original: str, edited: str) -> Dict[str, Any]:
         """
