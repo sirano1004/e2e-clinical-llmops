@@ -43,22 +43,31 @@ This project implements a complete **end-to-end LLMOps pipeline** for real-time 
 
 ```mermaid
 graph TD
-    User[Frontend / Doctor] -->|Audio Chunk| API[FastAPI Backend]
-    API -->|1. Transcribe| Whisper[WhisperX (CPU/GPU)]
-    API -->|2. Tag Roles| Role[Role Inference LLM]
-    API -->|3. Mask PII| PII[Presidio Anonymizer]
-    API -->|4. Generate Note| vLLM[vLLM Engine (T4 GPU)]
+    User["Frontend / Doctor"] -->|Audio Chunk| API["FastAPI Backend"]
     
-    subgraph "Async Background Tasks"
-        Guard[Guardrail Service] -->|Check Safety| Redis
-        Safety[Medical Safety] -->|Check Dosage| Redis
+    subgraph "Processing Pipeline"
+        API -->|"1. Transcribe"| Whisper["WhisperX (CPU/GPU)"]
+        Whisper -->|"2. Tag Roles"| Role["Role Inference LLM"]
+        Role -->|"3. Mask PII"| PII["Presidio Anonymizer"]
+        PII -->|"4. Generate Note"| vLLM["vLLM Engine (T4 GPU)"]
     end
     
-    API -.->|Trigger| Guard
-    API -.->|Trigger| Safety
+    subgraph "Async Safety Checks"
+        vLLM -.->|"Output Validation"| Guard["Guardrail Service"]
+        vLLM -.->|"Dosage Check"| Safety["Medical Safety"]
+        
+        Guard -->|"Flag Issues"| Redis
+        Safety -->|"Flag Issues"| Redis
+    end
     
-    vLLM -->|Incremental Update| Redis[(Redis State)]
-    Redis -->|Polling| User
+    vLLM -->|"Stream Note"| Redis[("Redis State")]
+    Redis -->|Polling / SSE| User
+
+    subgraph "Data Flywheel (RLHF Loop)"
+        User -->|"5. Feedback (Edit/Accept)"| Feedback["Feedback Service"]
+        Feedback -->|"Save Preference Pair"| DB[("S3 / Vector DB")]
+        DB -.->|"Retrain / Fine-tune"| vLLM
+    end
 ```
 
 -----
