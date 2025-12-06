@@ -15,16 +15,20 @@ from transformers import AutoTokenizer
 
 # --- Project Imports (Robust Relative Paths) ---
 # Import settings from the parent backend package
-from ..config import settings
+from ..core.config import settings
 # Import Pydantic models for data validation
 from ..schemas import (
     ScribeRequest, 
     ScribeResponse, 
-    SOAPNote
+    SOAPNote,
+    SOAPItem
 ) 
+# Import Custom Logger
+from ..core.logger import logger
 # Import prompt for each task
-from ..prompts import get_system_prompt
-
+from ..prompts import get_system_prompt, get_suffix_prompt
+# Import Redis session service
+from .session_service import session_service
 
 class LLMHandler:
     """
@@ -66,9 +70,9 @@ class LLMHandler:
         # 2. Initialize the AsyncLLMEngine
         # This step downloads the model (if needed) and allocates GPU memory.
         # WARNING: This takes 3-5 minutes and blocks the process during startup.
-        print(f"🔄 Initializing AsyncLLMEngine for model: {settings.vllm_model_name}...")
+        logger.info(f"🔄 Initializing AsyncLLMEngine for model: {settings.vllm_model_name}...")
         self.engine = AsyncLLMEngine.from_engine_args(engine_args)
-        print("✅ AsyncLLMEngine initialized successfully.")
+        logger.info("✅ AsyncLLMEngine initialized successfully.")
 
         # 3. Create LoRA Integer ID Map
         # VLLM requires a unique integer ID for each adapter.
@@ -78,10 +82,10 @@ class LLMHandler:
             name: index + 1 
             for index, name in enumerate(settings.lora_adapters.keys())
         }
-        print(f"✅ LoRA ID Map created: {self.lora_id_map}")
+        logger.info(f"✅ LoRA ID Map created: {self.lora_id_map}")
 
         # 4. Load Tokenizer to apply chat template
-        print(f"Loading tokenizer for: {settings.vllm_model_name}")
+        logger.info(f"Loading tokenizer for: {settings.vllm_model_name}")
         self.tokenizer = AutoTokenizer.from_pretrained(
             settings.vllm_model_name, 
             token=settings.hf_token
@@ -136,14 +140,14 @@ class LLMHandler:
             return final_output.strip()
 
         except Exception as e:
-            print(f"❌ VLLM Execution Error for request {request_id}: {e}")
+            logger.exception(f"❌ VLLM Execution Error for request {request_id}: {e}")
             raise RuntimeError(f"LLM inference failed: {e}") from e
 
     # ====================================================================
     # HIGH-LEVEL ORCHESTRATION (Task Specific)
     # ====================================================================
 
-    async def generate_scribe(self, request: ScribeRequest, previous_summary: Optional[str]) -> ScribeResponse:
+    async def generate_scribe(self, request: ScribeRequest) -> ScribeResponse:
         """
         Orchestrates the Scribing task:
         1. Determines which LoRA adapter to use based on task_type.
@@ -156,15 +160,16 @@ class LLMHandler:
         # --- 1. Dynamic LoRA Routing ---
         lora_request_object = None
         # Look up the adapter name from the task map (e.g., "soap" -> "lora_path")
-        lora_path = settings.lora_adapters.get(request.task_type)
-        
+        adapter_key = "soap" if "soap" in request.task_type else request.task_type        
+        lora_path = settings.lora_adapters.get(adapter_key)
+
         # Check if LoRA is enabled, mapped, and path exists
-        if settings.vllm_enable_lora and lora_path and request.task_type in self.lora_id_map:
+        if settings.vllm_enable_lora and lora_path and adapter_key in self.lora_id_map:
             
             if lora_path:
                 lora_request_object = LoRARequest(
-                    lora_name=request.task_type,                 
-                    lora_int_id=self.lora_id_map.get(request.task_type), # Use pre-calculated unique ID
+                    lora_name=adapter_key,                 
+                    lora_int_id=self.lora_id_map.get(adapter_key), # Use pre-calculated unique ID
                     lora_local_path=lora_path              
                 )
                 # Logging routing decision for debugging
@@ -188,27 +193,23 @@ class LLMHandler:
             # Format: "Doctor: content"
             formatted_content = f"{turn.role.upper()}: {turn.content}"
             messages.append({"role": "user", "content": formatted_content})
-
-        # 3. Handling Iterative Updates
-        if previous_summary:
-            messages.append({
-                        "role": "user", 
-                        "content": f"Here is the existing clinical summary so far:\n{previous_summary}"
-                    })
-            
-            messages.append({
-                "role": "user", 
-                "content": f"Based on the conversation and the summary above, generate a {request.task_type.upper()}."
-            })
-
+        
+        # 3. Context Serialization
+        # Convert the SOAPNote object to a JSON string for the LLM to read.
+        if request.existing_notes:
+            # Ensure we serialize it to a formatted JSON string
+            context_str = request.existing_notes.model_dump_json(indent=2)
         else:
-            # First time generation
-            messages.append({
-                "role": "user", 
-                "content": f"Generate a {request.task_type.upper()} note based on the conversation."
-            })
+            context_str = "None"
 
-        # --- 3. Execution ---
+        # 4. Suffix Strategy (Task-Specific Instructions)
+        # The instruction is appended at the very end.
+        suffix_prompt = get_suffix_prompt(request.task_type, context_str)
+
+        # Append the specific instruction as the last user message
+        messages.append({"role": "user", "content": suffix_prompt})
+
+        # 5. Execution
         # full_prompt passed from app.py already contains the Dialogue History
         raw_response = await self._execute_prompt(
             messages=messages,
@@ -218,32 +219,33 @@ class LLMHandler:
         
         duration = (time.time() - start_time) * 1000
 
-        # --- 4. Validation & Formatting ---
+        await session_service.update_metrics(request.session_id, duration, 'total_latency_ms')
+        
+        # Calculate current chunk index (Source ID)
+        # Assuming the new info comes from the latest chunk added
+        current_chunk_idx = request.chunk_index
+        
+        # 6. Validation & Formatting
         # Parse the raw text into structured data (SOAPNote or Dict)
-        parsed_summary = self._parse_output(raw_response, request.task_type)
+        parsed_summary = self._parse_output(raw_response, adapter_key, current_chunk_idx)
 
         return ScribeResponse(
             session_id=request.session_id,
             interaction_id=f"gen-{time.time()}", 
             generated_summary=parsed_summary,
-            model_used=settings.vllm_model_name,
-            adapter_used=lora_path,
-            processing_time_ms=duration,
-            # Placeholders for post-processing guards
-            safety_warnings=[],
-            hallucination_warnings=[]
+            chunk_index=current_chunk_idx
         )
 
     # ====================================================================
     # HELPER METHODS
     # ====================================================================
 
-    def _parse_output(self, raw_text: str, task_type: str) -> Union[SOAPNote, Dict[str, Any], str]:
+    def _parse_output(self, raw_text: str, task_type: str, chunk_idx: int = 0) -> Union[SOAPNote, Dict[str, Any], str]:
         """
         Parses LLM output. If task is SOAP, attempts to extract and validate JSON.
         Returns raw text if parsing fails to prevent app crash.
         """
-        if task_type == "soap":
+        if task_type in ["soap"]:
             try:
                 # Regex to find the first JSON object in the output (ignoring Markdown)
                 json_match = re.search(r"\{.*\}", raw_text, re.DOTALL)
@@ -252,19 +254,26 @@ class LLMHandler:
                 # Load JSON
                 data = json.loads(clean_json)
                 
-                # Validate against Pydantic Schema (SOAPNote)
-                return SOAPNote(**data)
+                # Convert raw strings to SOAPItems with ID & Source
+                structured_data = {}
+                for key in ["subjective", "objective", "assessment", "plan"]:
+                    raw_list = data.get(key, [])
+                    item_list = []
+                    for text_content in raw_list:
+                        if isinstance(text_content, str):
+                            # Create Trackable Item
+                            item_list.append(SOAPItem(
+                                text=text_content,
+                                source_chunk_id=chunk_idx
+                            ))
+                    structured_data[key] = item_list
+                
+                return SOAPNote(**structured_data)
             
             except (json.JSONDecodeError, Exception) as e:
-                print(f"⚠️ JSON Parsing Failed: {e}")
+                logger.exception(f"⚠️ JSON Parsing Failed: {e}")
                 # Fallback: Wrap raw text in a dict structure so Frontend can display it
-                return {
-                    "subjective": "PARSING ERROR",
-                    "objective": "Please check raw output.",
-                    "assessment": "",
-                    "plan": "",
-                    "raw_output": raw_text # Pass raw text for manual correction
-                }
+                return SOAPNote()
         
         # For non-structured tasks, return string directly
         return raw_text
