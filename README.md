@@ -148,8 +148,8 @@ This project is specifically designed and tuned for **Cost-Effective Inference**
 
     ```env
     TARGET_MODEL="unsloth/Llama-3-8b-Instruct"
-    HF_TOKEN="your_huggingface_token"
-    REDIS_HOST="localhost"
+    HF_TOKEN="your_huggingface_token"\
+    REDIS_URL="your_redis_url"
     ```
 
 4.  **Run Server**

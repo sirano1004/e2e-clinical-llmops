@@ -5,7 +5,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field
 
 # Get the folder where THIS file (config.py) lives (i.e., 'backend/')
-BASE_DIR = Path(__file__).resolve().parent
+BASE_DIR = Path(__file__).resolve().parent.parent
 # Point exactly to the .env file in that folder
 ENV_FILE_PATH = BASE_DIR / ".env"
 
@@ -70,9 +70,7 @@ class Settings(BaseSettings):
     # ==========================================
     # 7. REDIS (Memory)
     # ==========================================
-    redis_host: str = Field("localhost", alias="REDIS_HOST")
-    redis_port: int = Field(6379, alias="REDIS_PORT")
-    redis_db: int = Field(0, alias="REDIS_DB")
+    redis_url: str = Field(..., alias="REDIS_URL")
     # ==========================================)
 
     # Load from .env file

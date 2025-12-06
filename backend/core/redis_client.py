@@ -22,17 +22,17 @@ class RedisClient:
         if cls._instance:
             return
 
-        print(f"🔌 Connecting to Redis at {settings.redis_host}:{settings.redis_port}...")
+        print(f"🔌 Connecting to Redis at {settings.redis_url}dc...")
         
         try:
             # Initialize Async Redis Client
             # decode_responses=True ensures we get 'str' instead of 'bytes'
-            cls._instance = redis.Redis(
-                host=settings.redis_host,
-                port=settings.redis_port,
-                db=0, # Default database
-                decode_responses=True, 
-                socket_timeout=5.0,
+            cls._instance = redis.Redis.from_url(
+                url=settings.redis_url, 
+                encoding="utf-8",
+                decode_responses=True,
+                socket_timeout=5,
+                max_connections=30, 
                 retry_on_timeout=True
             )
             
