@@ -62,9 +62,6 @@ class LLMHandler:
             # --- Multi-LoRA Configuration ---
             enable_lora=settings.vllm_enable_lora,
             max_loras=4, # Max number of active adapters in VRAM
-            lora_modules=settings.lora_adapters, # Pass the Dict[name, path] map to engine
-            
-            # NOTE: If using TensorRT-LLM, we would add: backend="tensorrt" here.
         )
         
         # 2. Initialize the AsyncLLMEngine
@@ -248,7 +245,7 @@ class LLMHandler:
         if task_type in ["soap"]:
             try:
                 # Regex to find the first JSON object in the output (ignoring Markdown)
-                json_match = re.search(r"\{.*\}", raw_text, re.DOTALL)
+                json_match = re.search(r"\{.*?\}", raw_text, re.DOTALL)
                 clean_json = json_match.group(0) if json_match else raw_text
                 
                 # Load JSON
@@ -264,7 +261,7 @@ class LLMHandler:
                             # Create Trackable Item
                             item_list.append(SOAPItem(
                                 text=text_content,
-                                source_chunk_id=chunk_idx
+                                source_chunk_index=chunk_idx
                             ))
                     structured_data[key] = item_list
                 

@@ -106,7 +106,12 @@ class GuardrailService:
             if isinstance(items, list):
                 for item in items:
                     # Remove tags: "Headache (Updated)" -> "Headache"
-                    clean_item = re.sub(r"\s*\((Updated|Correction)\)", "", item, flags=re.IGNORECASE)
+                    # When receiving string
+                    if isinstance(item, str):
+                        clean_item = re.sub(r"\s*\((Updated|Correction)\)", "", item, flags=re.IGNORECASE)
+                    # When receiving dict, we assume it follows SOAPItem Pydantic model.
+                    elif isinstance(item, dict):
+                        clean_item = re.sub(r"\s*\((Updated|Correction)\)", "", item.get('text', ''), flags=re.IGNORECASE)
                     text_parts.append(clean_item)
             elif isinstance(items, str):
                 text_parts.append(items)

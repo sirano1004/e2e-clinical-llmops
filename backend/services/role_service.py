@@ -51,7 +51,7 @@ class RoleService:
             
         return updated_conversation
 
-async def _get_roles_from_llm(self, inputs: List[Dict]) -> Dict[int, str]:
+    async def _get_roles_from_llm(self, inputs: List[Dict]) -> Dict[int, str]:
         """
         Returns a map: {index: "Doctor" or "Patient"}
         """
