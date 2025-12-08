@@ -84,7 +84,4 @@ def run_safety_tests():
 
 if __name__ == "__main__":
     # Ensure the pipeline is loaded before running tests
-    if safety_service.ner_pipeline:
-        run_safety_tests()
-    else:
-        print("❌ Safety Service failed to initialize NER pipeline. Check your environment.")
+    run_safety_tests()

@@ -317,27 +317,21 @@ class SessionService:
 
     async def clear_session(self, session_id: str):
         """
-        Manually deletes session data (e.g., when a doctor clicks 'Finish').
+        Completely wipes ALL data related to a session.
+        Uses SCAN to find all keys matching 'session:{id}:*' instead of a hardcoded list.
         """
         client = redis_client.get_instance()
-        keys = [
-            f"session:{session_id}:history", 
-            f"session:{session_id}:soap",
-            f"session:{session_id}:metrics",
-            f"session:{session_id}:chunk_count",
-            f"session:{session_id}:warnings",
-            f"session:{session_id}:safety"
-        ]
-
-        # 2. Define dynamic keys (unstructured text drafts)
-        # We must explicitly list all possible tasks that use the 'draft' pattern.
-        # This list should match the Litreal types in schemas.py that use save_text_draft.
-        text_draft_tasks = ["referral", "certificate"]
+        pattern = f"session:{session_id}:*"
         
-        for task in text_draft_tasks:
-            keys.append(f"session:{session_id}:{task}:draft")
-
-        await client.delete(*keys)
+        # 1. Find all keys belonging to this session
+        # scan_iter is non-blocking and efficient for finding matching keys
+        keys_to_delete = [key async for key in client.scan_iter(match=pattern)]
+        
+        # 2. Delete them all in one go
+        if keys_to_delete:
+            await client.delete(*keys_to_delete)
+            # Optional: Log strictly for debugging
+            # print(f"🧹 Cleared session {session_id}. Deleted keys: {keys_to_delete}")
 
 # Singleton Instance
 session_service = SessionService()
