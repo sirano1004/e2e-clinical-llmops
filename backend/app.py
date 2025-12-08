@@ -240,10 +240,11 @@ async def run_guardrail_background(session_id, transcript, summary, chunk_index)
 
 async def run_safety_check_background(session_id, summary, chunk_index):
 
-    # Dict -> String 변환 (Safety Service accepts text only)
+    # Dict -> String (Safety Service accepts text only)
     # only get plan field 
     if isinstance(summary, dict):
-        summary_text = summary.get('plan', '')
+        # assume element follows SOAPItem schema.
+        summary_text = ', '.join([item.get('text', '') for item in summary.get('plan', [])])
     else:
         summary_text = str(summary)
 
