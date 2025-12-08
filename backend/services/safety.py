@@ -1,9 +1,7 @@
 import re
 import asyncio
 from typing import List, Dict, Any, Optional, Tuple
-# from transformers import pipeline # Removed unused import
 from ..core.logger import logger
-# Assuming settings import is available if needed, otherwise removed for simplicity
 
 class ClinicalSafetyService:
     """
@@ -32,10 +30,7 @@ class ClinicalSafetyService:
             "aspirin": {"limit": 4000, "unit": "mg"}
         }
         
-        # [Removed] NER Pipeline loading is unnecessary since it's a placeholder.
-        self.ner_pipeline = None 
         logger.info("✅ Safety rules loaded and ready (CPU-only).")
-
 
     def _detect_rule_violations(self, summary_text: str) -> List[str]:
         """
@@ -86,14 +81,13 @@ class ClinicalSafetyService:
 
         return warnings
 
-    async def assess_safety_risks(self, summary_text: str) -> List[str]:
+    async def check_safety(self, summary_text: str) -> List[str]:
         """
         [PUBLIC/ASYNC] Performs a comprehensive safety assessment on the provided text.
         Offloads the synchronous rule detection logic to a thread to prevent blocking.
         """
         return await asyncio.to_thread(self._detect_rule_violations, summary_text)    
 
-    # [Removed] _find_closest_dosage is no longer needed since the main regex links drug and dosage.
     def _parse_dosage_string(self, dosage_str: str) -> Tuple[int, str]:
         """
         Parses strings like "500mg", "1g", "500 mg" into (500, 'mg').
