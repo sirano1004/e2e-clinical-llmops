@@ -4,18 +4,19 @@ from datetime import datetime
 from unittest.mock import patch, MagicMock
 
 # --- Project Imports ---
-# NOTE: 실제 파일 구조에 맞게 경로를 수정해야 할 수 있습니다.
+# NOTE: The path might need adjustment based on the actual file structure.
 from backend.schemas import DialogueTurn
 from backend.services.role_service import role_service
+# Example of alternative paths (commented out)
 # from schemas import DialogueTurn
 # from ...services.role_service import role_service
 
 # ====================================================================
-# LLM 실행 Mocking (가짜 응답 설정)
+# LLM Execution Mocking (Fake Response Setup)
 # ====================================================================
 
-# LLM이 Role Tagging 요청을 받았을 때 반환할 JSON 문자열을 정의합니다.
-# DialogueTurn의 index 0, 2는 Doctor, 1, 3은 Patient로 가정합니다.
+# Define the JSON string the LLM should return when a Role Tagging request is received.
+# Assume index 0, 2 are Doctor, and 1, 3 are Patient.
 MOCK_LLM_RESPONSE = json.dumps({
     "0": "Doctor",
     "1": "Patient",
@@ -23,26 +24,26 @@ MOCK_LLM_RESPONSE = json.dumps({
     "3": "Patient"
 })
 
-# llm_service._execute_prompt 함수를 흉내내는 Mock 비동기 함수를 정의합니다.
+# Define the Mock asynchronous function that mimics llm_service._execute_prompt.
 async def mock_execute_prompt(*args, **kwargs):
     """
     Simulates the LLM call without actually running vLLM.
     """
-    print("MOCK: LLM 추론 대신 미리 정해진 JSON 응답 반환...")
-    # 실제 응답처럼 JSON 문자열을 리턴합니다.
+    print("MOCK: Returning predefined JSON response instead of LLM inference...")
+    # Returns the JSON string as if it were a real response.
     return MOCK_LLM_RESPONSE
 
 # ====================================================================
-# 테스트 함수
+# Test Function
 # ====================================================================
 
 async def test_assign_roles_scenario():
     """
-    RoleService.assign_roles 기능을 테스트합니다.
+    Tests the functionality of RoleService.assign_roles.
     """
     print("--- Role Assignment Test Start ---")
 
-    # 1. 샘플 입력 데이터 생성 (역할은 Transcriber에서 온 것처럼 'TBD'로 설정)
+    # 1. Create sample input data (Roles set to 'TBD' as if from the Transcriber)
     input_conversation = [
         DialogueTurn(role="TBD", content="Hello, how can I help you today?", chunk_index=0),
         DialogueTurn(role="TBD", content="Hi Doctor, I have a persistent cough and fever.", chunk_index=0),
@@ -50,20 +51,20 @@ async def test_assign_roles_scenario():
         DialogueTurn(role="TBD", content="About three days now.", chunk_index=0),
     ]
 
-    # 2. LLM Handler의 _execute_prompt 함수를 Mocking으로 대체합니다.
-    # @patch를 사용하여, 실제 함수가 아닌 우리가 만든 가짜 함수를 대신 사용하게 합니다.
-    # NOTE: llm_service는 singleton 인스턴스입니다.
+    # 2. Replace the LLM Handler's _execute_prompt function with the Mock.
+    # Use @patch to substitute the actual function with our fake function.
+    # NOTE: llm_service is a singleton instance.
     with patch('backend.services.llm_handler.llm_service._execute_prompt', new=mock_execute_prompt):
         
-        # 3. assign_roles 호출
-        # 이 함수 내부에서 Mock 함수가 실행되고, 결과를 받아 Roles를 업데이트합니다.
+        # 3. Call assign_roles
+        # Inside this function, the Mock function executes, and updates roles with the result.
         updated_turns = await role_service.assign_roles(input_conversation)
     
-    # 4. 결과 검증 및 출력
+    # 4. Validate and Print Results
     print("\n--- Test Result ---")
     print(f"Total Turns Processed: {len(updated_turns)}")
     
-    # 예상 결과와 일치하는지 확인
+    # Verify against expected results
     expected_roles = ["Doctor", "Patient", "Doctor", "Patient"]
     
     for i, turn in enumerate(updated_turns):
@@ -73,13 +74,13 @@ async def test_assign_roles_scenario():
     print("\n✅ All role assignments passed successfully!")
 
 # ====================================================================
-# 메인 실행
+# Main Execution
 # ====================================================================
 
 if __name__ == "__main__":
-    # 비동기 함수를 실행하기 위해 asyncio.run() 사용
+    # Use asyncio.run() to execute the asynchronous function
     try:
         asyncio.run(test_assign_roles_scenario())
     except ImportError as e:
         print(f"❌ Error: {e}")
-        print("경로 문제일 수 있습니다. 'backend.schemas' 및 'backend.services.role_service' 경로를 현재 실행 위치에 맞게 수정해주세요.")
+        print("This might be a path issue. Please adjust the paths for 'backend.schemas' and 'backend.services.role_service' relative to your current execution location.")
