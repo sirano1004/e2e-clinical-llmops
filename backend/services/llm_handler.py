@@ -7,7 +7,7 @@ from typing import Dict, Any, Optional, List, Union
 # --- VLLM Core Imports ---
 from vllm.engine.async_llm_engine import AsyncLLMEngine
 from vllm.engine.arg_utils import AsyncEngineArgs
-from vllm.sampling_params import SamplingParams
+from vllm.sampling_params import SamplingParams, GuidedDecodingParams
 from vllm.lora.request import LoRARequest
 
 # --- HF Tokenizer Import ---
@@ -21,7 +21,8 @@ from ..schemas import (
     ScribeRequest, 
     ScribeResponse, 
     SOAPNote,
-    SOAPItem
+    SOAPItem,
+    SOAPNoteGeneration
 ) 
 # Import Custom Logger
 from ..core.logger import logger
@@ -95,7 +96,8 @@ class LLMHandler:
     async def _execute_prompt(self, 
                              messages: List[Dict[str, str]],
                              temperature: float,
-                             lora_request_object: Optional[LoRARequest] = None) -> str:
+                             lora_request_object: Optional[LoRARequest] = None,
+                             guided_decoding: Optional[GuidedDecodingParams] = None) -> str:
         """
         Executes a raw prompt against the VLLM engine asynchronously.
         This is a reusable core function that handles the AsyncGenerator stream.
@@ -116,6 +118,7 @@ class LLMHandler:
             temperature=temperature,
             max_tokens=settings.vllm_max_output_tokens, # Cap output length (e.g., 2048)
             stop=settings.vllm_stop_sequences,          # Stop tokens (e.g., <|eot_id|>)
+            guided_decoding=guided_decoding
         )
         
         try:
@@ -211,7 +214,8 @@ class LLMHandler:
         raw_response = await self._execute_prompt(
             messages=messages,
             temperature=request.temperature,
-            lora_request_object=lora_request_object
+            lora_request_object=lora_request_object,
+            guided_decoding=GuidedDecodingParams(json=SOAPNoteGeneration.model_json_schema())
         )
         
         duration = (time.time() - start_time) * 1000
