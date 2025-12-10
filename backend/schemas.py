@@ -55,6 +55,12 @@ class SOAPNote(BaseModel):
         self.assessment.extend(new_note.assessment)
         self.plan.extend(new_note.plan)
 
+class SOAPNoteGeneration(BaseModel):
+    subjective: List[str]
+    objective: List[str]
+    assessment: List[str]
+    plan: List[str]
+
 # --- 2. Input ---
 class ScribeRequest(BaseModel):
     session_id: str = Field(default_factory=lambda: str(uuid.uuid4()))

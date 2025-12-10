@@ -67,7 +67,7 @@ def run_safety_tests():
         print(f"   Input: \"{case['input']}\"")
         
         # Execute the safety check
-        warnings = safety_service.check_safety(case['input'])
+        warnings = safety_service._detect_rule_violations(case['input'])
         
         # Validation Logic
         has_warning = len(warnings) > 0
