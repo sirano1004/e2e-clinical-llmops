@@ -22,7 +22,7 @@ class SegmentInfo(BaseModel):
     start: float
     end: float
     text: str
-    speaker: str = Field(default="UNKNOWN", description="Speaker ID from Diarization")
+    speaker: str = Field(default="TBD", description="Speaker ID from Diarization")
     avg_confidence: float
     words: List[WordInfo]
 

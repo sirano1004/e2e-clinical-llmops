@@ -71,6 +71,7 @@ class Settings(BaseSettings):
     # 7. REDIS (Memory)
     # ==========================================
     redis_url: str = Field(..., alias="REDIS_URL")
+    session_ttl: int = 3600
     # ==========================================)
 
     # Load from .env file

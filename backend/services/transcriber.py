@@ -30,7 +30,6 @@ class TranscriberService:
         logger.info(f"🎤 Initializing WhisperX on {self.device} ({self.compute_type})...")
         
         # 1. Load Whisper Model (ASR)
-        # 'large-v2' offers the best trade-off for medical terminology accuracy.
         try:
             self.model = whisperx.load_model(
                 settings.whisper_model_size, 
@@ -107,98 +106,119 @@ class TranscriberService:
             gc.collect()
             torch.cuda.empty_cache()
 
-    def _format_response(self, result: Dict[str, Any], threshold: float, chunk_index: int) -> Dict[str, Any]:
+def _format_response(self, result: Dict[str, Any], threshold: float, chunk_index: int) -> Dict[str, Any]:
         """
         Maps raw WhisperX output to our Pydantic schema structure.
-        - Converts raw text into List[DialogueTurn]
-        - Tags low-confidence words with (unclear: ...)
+        INCLUDES HEURISTIC MERGE: Combines segments if gap < 0.5s.
         """
         conversation_output = [] 
         raw_segments = []
 
-        # Define important POS tags to monitor (Numbers, Proper Nouns, Nouns, Adjectives)
-        CRITICAL_POS_TAGS = ["NUM", "PROPN", "NOUN", "ADJ"]
+        # --- 1. SMART MERGE LOGIC ---
+        # We assume that if the silence is < 0.5s, it is the same speaker continuing their thought.
+        merged_segments = []
+        
+        if result["segments"]:
+            # Start with the first segment
+            current_seg = result["segments"][0]
+            
+            for next_seg in result["segments"][1:]:
+                # Calculate silence gap
+                gap = next_seg["start"] - current_seg["end"]
+                
+                if gap < 0.5:
+                    # MERGE THEM!
+                    # 1. Combine Text
+                    current_seg["text"] += " " + next_seg["text"]
+                    
+                    # 2. Extend End Time
+                    current_seg["end"] = next_seg["end"]
+                    
+                    # 3. Combine 'words' list (Crucial for Red Underlines)
+                    if "words" in current_seg and "words" in next_seg:
+                        current_seg["words"].extend(next_seg["words"])
+                        
+                else:
+                    # Gap is too big -> This is likely a new turn or new speaker.
+                    merged_segments.append(current_seg)
+                    current_seg = next_seg
+            
+            # Don't forget the last segment
+            merged_segments.append(current_seg)
 
+        # --- 2. FORMATTING LOOP (Uses merged_segments now) ---
+        CRITICAL_POS_TAGS = ["NUM", "PROPN", "NOUN", "ADJ"]
         IGNORE_WORDS = {
-            "i", "you", "he", "she", "it", "we", "they", "my", "your", "his", "her", "its", "our", "their", # Pronouns
-            "and", "but", "or", "so", "because", "if", "then", "with", "at", "on", "in", "to", "for", "of", # Conjunctions/Prepositions
-            "yeah", "yep", "yes", "no", "nah", "okay", "ok", "right", "sure", # Affirmations
-            "um", "uh", "ah", "hmm", "oh", "like", "well", "just" # Fillers
+            "i", "you", "he", "she", "it", "we", "they", "my", "your", "his", "her", "its", "our", "their",
+            "and", "but", "or", "so", "because", "if", "then", "with", "at", "on", "in", "to", "for", "of",
+            "yeah", "yep", "yes", "no", "nah", "okay", "ok", "right", "sure",
+            "um", "uh", "ah", "hmm", "oh", "like", "well", "just"
         }
 
-        for segment in result["segments"]:
-            # Default placeholder. The LLM will assign "Doctor" or "Patient" later.
+        for segment in merged_segments:
+            # Placeholder Speaker (LLM will fix this later)
             speaker = "TBD"
-            segment_text = segment.get("text", "")
-
-            # NLP Analysis for context-aware POS tagging
-            doc = self.nlp(segment_text) if self.nlp else None
-            spacy_tokens = [token for token in doc] if doc else []
-
-            segment_ui_words = []
+            
+            # We reconstruct the sentence from the 'words' to insert (unclear: tags)
             segment_llm_words = []
-
-            # WhisperX segments contain a 'words' list
+            segment_ui_words = []
+            
+            # WhisperX segments usually have 'words' from alignment
             if "words" in segment:
+                # Optional: Run NLP on the full merged text for better context
+                # doc = self.nlp(segment["text"]) if self.nlp else None
+                
                 for i, w in enumerate(segment["words"]):
                     word_text = w.get("word", "")
                     conf = round(w.get("score", 0.0), 2)
                     clean_word = word_text.strip()
                     clean_word_lower = clean_word.lower().replace(".", "").replace(",", "").replace("?", "").replace("!", "")
 
-                    # --- 🧠 Smart Logic (Calculate ONCE) ---
+                    # --- Significant Word Logic ---
                     is_significant = False
-                    
-                    # 🚨 Check 1: Is it in the Ignore List? (Priority 1)
                     if clean_word_lower in IGNORE_WORDS:
                         is_significant = False
-                        
-                    # Check 2: Spacy Analysis (Priority 2)
-                    elif doc and i < len(spacy_tokens):
-                        token = spacy_tokens[i]
-                        if token.pos_ in CRITICAL_POS_TAGS and not token.is_stop:
-                            is_significant = True
-                    else:
-                        # Fallback heuristic: length > 3 implies potential significance
-                        if len(clean_word) > 3:
-                            is_significant = True
+                    elif len(clean_word) > 3: 
+                        is_significant = True
                     
-                    # Final Decision: Mark as unclear ONLY if low confidence AND significant
+                    # Flag if low confidence AND significant
                     should_flag = (conf < threshold) and is_significant
 
-                    # --- A. Collect Data for UI (Boolean Flag) ---
+                    # 1. Data for UI (Red Underlines)
                     segment_ui_words.append({
                         "word": word_text,
                         "start": w.get("start", 0.0),
                         "end": w.get("end", 0.0),
-                        "is_unclear": should_flag # 💡 Simply True/False
+                        "is_unclear": should_flag
                     })
 
-                    # --- B. Format Text for LLM ---
+                    # 2. Data for LLM (Text Tags)
                     if should_flag:
                         segment_llm_words.append(f"(unclear: {clean_word})")
                     else:
                         segment_llm_words.append(clean_word)
+                
+                # Rebuild the full text string
+                formatted_sentence = " ".join(segment_llm_words)
+
+            else:
+                # Fallback if alignment failed
+                formatted_sentence = segment["text"]
+
+            # --- 3. BUILD OUTPUT OBJECTS ---
             
-            # Reconstruct the sentence with tags applied
-            formatted_sentence = " ".join(segment_llm_words)
-            
-            # 💡 Create Structured Dialogue Object
-            # This allows app.py to easily swap 'SPEAKER_01' with 'Doctor' later
+            # A. The object for the LLM (History)
             conversation_output.append(DialogueTurn(
                 role=speaker,
                 content=formatted_sentence,
                 chunk_index=chunk_index
             ))
             
-            # Create UI Metadata Object
+            # B. The object for the Frontend UI (Highlights)
             raw_segments.append({
-                "id": 0, # Placeholder ID
                 "start": segment.get("start", 0.0),
                 "end": segment.get("end", 0.0),
-                "text": formatted_sentence,
-                "speaker": speaker, # Ensure speaker is passed to UI
-                "avg_confidence": 0.0, # Placeholder, implies average of words
+                "speaker": speaker,
                 "words": segment_ui_words
             })
 
