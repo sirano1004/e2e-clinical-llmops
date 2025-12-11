@@ -7,7 +7,8 @@ from typing import List, Set, Union, Dict, Any
 from ..schemas import DialogueTurn
 from ..core.logger import logger
 from ..core.load_models import get_ner_pipeline, get_nli_pipeline
-from .session_service import session_service
+# Repositories
+from ..repositories.metrics import metrics_service
 
 class GuardrailService:
     """
@@ -75,7 +76,7 @@ class GuardrailService:
             
             # Save metrics to redis
             if analysis_result['metrics']:
-                await session_service.update_metrics(session_id, analysis_result['metrics'])
+                await metrics_service.update_metrics(session_id, analysis_result['metrics'])
 
             return analysis_result['warnings']
 

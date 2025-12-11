@@ -8,7 +8,7 @@ import ssl
 ssl._create_default_https_context = ssl._create_unverified_context
 # --- Project Imports (Relative Paths) ---
 from ..core.config import settings
-from ..schemas import DialogueTurn
+from ..schemas import DialogueTurn, SegmentInfo, WordInfo
 from ..core.logger import logger
 class TranscriberService:
     """
@@ -30,7 +30,6 @@ class TranscriberService:
         logger.info(f"🎤 Initializing WhisperX on {self.device} ({self.compute_type})...")
         
         # 1. Load Whisper Model (ASR)
-        # 'large-v2' offers the best trade-off for medical terminology accuracy.
         try:
             self.model = whisperx.load_model(
                 settings.whisper_model_size, 
@@ -110,23 +109,53 @@ class TranscriberService:
     def _format_response(self, result: Dict[str, Any], threshold: float, chunk_index: int) -> Dict[str, Any]:
         """
         Maps raw WhisperX output to our Pydantic schema structure.
-        - Converts raw text into List[DialogueTurn]
-        - Tags low-confidence words with (unclear: ...)
+        INCLUDES HEURISTIC MERGE: Combines segments if gap < 0.5s.
         """
         conversation_output = [] 
         raw_segments = []
 
-        # Define important POS tags to monitor (Numbers, Proper Nouns, Nouns, Adjectives)
-        CRITICAL_POS_TAGS = ["NUM", "PROPN", "NOUN", "ADJ"]
+        # --- 1. SMART MERGE LOGIC ---
+        # We assume that if the silence is < 0.5s, it is the same speaker continuing their thought.
+        merged_segments = []
+        
+        if result["segments"]:
+            # Start with the first segment
+            current_seg = result["segments"][0]
+            
+            for next_seg in result["segments"][1:]:
+                # Calculate silence gap
+                gap = next_seg["start"] - current_seg["end"]
+                
+                if gap < 0.5:
+                    # MERGE THEM!
+                    # 1. Combine Text
+                    current_seg["text"] += " " + next_seg["text"]
+                    
+                    # 2. Extend End Time
+                    current_seg["end"] = next_seg["end"]
+                    
+                    # 3. Combine 'words' list (Crucial for Red Underlines)
+                    if "words" in current_seg and "words" in next_seg:
+                        current_seg["words"].extend(next_seg["words"])
+                        
+                else:
+                    # Gap is too big -> This is likely a new turn or new speaker.
+                    merged_segments.append(current_seg)
+                    current_seg = next_seg
+            
+            # Don't forget the last segment
+            merged_segments.append(current_seg)
 
+        # --- 2. FORMATTING LOOP (Uses merged_segments now) ---
+        CRITICAL_POS_TAGS = ["NUM", "PROPN", "NOUN", "ADJ"]
         IGNORE_WORDS = {
-            "i", "you", "he", "she", "it", "we", "they", "my", "your", "his", "her", "its", "our", "their", # Pronouns
-            "and", "but", "or", "so", "because", "if", "then", "with", "at", "on", "in", "to", "for", "of", # Conjunctions/Prepositions
-            "yeah", "yep", "yes", "no", "nah", "okay", "ok", "right", "sure", # Affirmations
-            "um", "uh", "ah", "hmm", "oh", "like", "well", "just" # Fillers
+            "i", "you", "he", "she", "it", "we", "they", "my", "your", "his", "her", "its", "our", "their",
+            "and", "but", "or", "so", "because", "if", "then", "with", "at", "on", "in", "to", "for", "of",
+            "yeah", "yep", "yes", "no", "nah", "okay", "ok", "right", "sure",
+            "um", "uh", "ah", "hmm", "oh", "like", "well", "just"
         }
 
-        for segment in result["segments"]:
+        for segment in merged_segments:
             # Default placeholder. The LLM will assign "Doctor" or "Patient" later.
             speaker = "TBD"
             segment_text = segment.get("text", "")
@@ -167,12 +196,14 @@ class TranscriberService:
                     should_flag = (conf < threshold) and is_significant
 
                     # --- A. Collect Data for UI (Boolean Flag) ---
-                    segment_ui_words.append({
-                        "word": word_text,
-                        "start": w.get("start", 0.0),
-                        "end": w.get("end", 0.0),
-                        "is_unclear": should_flag # 💡 Simply True/False
-                    })
+                    segment_ui_words.append(
+                        WordInfo(
+                            word=word_text,
+                            start=w.get("start", 0.0),
+                            end=w.get("end",0.0),
+                            is_unclear=should_flag
+                        )
+                    )
 
                     # --- B. Format Text for LLM ---
                     if should_flag:
@@ -180,27 +211,31 @@ class TranscriberService:
                     else:
                         segment_llm_words.append(clean_word)
             
-            # Reconstruct the sentence with tags applied
-            formatted_sentence = " ".join(segment_llm_words)
+                # Rebuild the full text string
+                formatted_sentence = " ".join(segment_llm_words)
+
+            else:
+                # Fallback if alignment failed
+                formatted_sentence = segment["text"]
+
+            # --- 3. BUILD OUTPUT OBJECTS ---
             
-            # 💡 Create Structured Dialogue Object
-            # This allows app.py to easily swap 'SPEAKER_01' with 'Doctor' later
+            # A. The object for the LLM (History)
             conversation_output.append(DialogueTurn(
                 role=speaker,
                 content=formatted_sentence,
                 chunk_index=chunk_index
             ))
             
-            # Create UI Metadata Object
-            raw_segments.append({
-                "id": 0, # Placeholder ID
-                "start": segment.get("start", 0.0),
-                "end": segment.get("end", 0.0),
-                "text": formatted_sentence,
-                "speaker": speaker, # Ensure speaker is passed to UI
-                "avg_confidence": 0.0, # Placeholder, implies average of words
-                "words": segment_ui_words
-            })
+            # B. The object for the Frontend UI (Highlights)
+            raw_segments.append(
+                SegmentInfo(
+                    start=segment.get("start", 0.0),
+                    end=segment.get("end", 0.0),
+                    speaker=speaker,
+                    words=segment_ui_words
+                )
+            )
 
         return {
             "conversation": conversation_output, 

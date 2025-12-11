@@ -4,7 +4,12 @@ from typing import List, Optional, Dict, Any, Union
 
 # --- Project Imports ---
 from ..core.redis_client import redis_client
-from ..schemas import DialogueTurn, SOAPNote
+from ..schemas import (
+    DialogueTurn, 
+    SOAPNote, 
+    SegmentInfo,
+    WordInfo
+)
 from ..core.logger import logger
 
 # Session TimeOUt
@@ -47,6 +52,36 @@ class SessionService:
         
         # Deserialize JSON strings back to Pydantic objects
         return [DialogueTurn.model_validate_json(item) for item in raw_list]
+
+    async def add_ui_segments(self, session_id: str, segments: List[SegmentInfo]):
+        """
+        Appends raw UI segments (rich metadata like red underlines) to Redis.
+        These are used by the frontend for real-time rendering.
+        """
+        if not segments:
+            return
+        
+        client = redis_client.get_instance()
+        key = f"session:{session_id}:ui_transcript"
+
+        # Serialize to JSON strings
+        serialized_segs = [segment.model_dump_json() for segment in segments]
+            
+        await client.rpush(key, *serialized_segs)
+        await client.expire(key, SESSION_TTL)
+
+    async def get_ui_segments(self, session_id: str) -> List[Dict[str, Any]]:
+        """
+        Retrieves the full list of UI segments for the frontend.
+        """
+        client = redis_client.get_instance()
+        key = f"session:{session_id}:ui_transcript"
+        
+        # Get all items (0 to -1)
+        raw_data = await client.lrange(key, 0, -1)
+        
+        # Deserialize JSON strings back to dicts
+        return [json.loads(seg) for seg in raw_data]
 
     async def update_soap_note(self, session_id: str, note: SOAPNote):
         """
