@@ -1,4 +1,6 @@
 import streamlit as st
+from styles import NOTE_STYLES
+
 
 def render_soap_note_view(soap_note, warnings_map):
     """
@@ -10,32 +12,34 @@ def render_soap_note_view(soap_note, warnings_map):
         st.info("No notes generated yet.")
         return
 
+    st.markdown(NOTE_STYLES, unsafe_allow_html=True)
+
     # Iterate strictly through standard SOAP sections
     for section in ["subjective", "objective", "assessment", "plan"]:
         items = soap_note.get(section, [])
         if not items:
             continue
-            
-        # Section Header
-        st.markdown(f"### {section.capitalize()}")
-        
+
+        st.markdown(f"<div class='note-header'>{section.capitalize()}</div>", unsafe_allow_html=True)
+
         for item in items:
             # item structure: {'text': '...', 'source_chunk_index': 0}
             text = item.get("text", "")
             chunk_idx = item.get("source_chunk_index", -1)
-            
-            # 🔍 Check if this chunk has warnings
+
             chunk_warnings = warnings_map.get(str(chunk_idx), [])
-            
+
             if chunk_warnings:
-                # 🔴 Highlight style for items with warnings
                 warning_msg = " | ".join(chunk_warnings["warnings"])
-                st.error(f"{text}\n\n**⚠️ Warning:** {warning_msg}", icon="🚨")
+                st.markdown(
+                    f"<div class='note-warning'><span class='note-warning-title'>Warning:</span>{text}<br>{warning_msg}</div>",
+                    unsafe_allow_html=True,
+                )
             else:
-                # ⚪ Normal style
-                st.markdown(f"- {text}")
-        
-        st.divider()
+                st.markdown(f"<p class='note-item'>- {text}</p>", unsafe_allow_html=True)
+
+        st.markdown("<div class='note-divider'></div>", unsafe_allow_html=True)
+
 
 def render_soap_note_editor(soap_note):
     """
