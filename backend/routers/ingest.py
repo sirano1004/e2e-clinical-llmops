@@ -85,7 +85,7 @@ async def ingest_audio_chunk(
             for i, turn in enumerate(tagged_turns):
                 # Ensure we don't go out of bounds (they should be 1:1)
                 if i < len(transcribe_result["raw_segments"]):
-                    transcribe_result["raw_segments"][i]["speaker"] = turn.role
+                    transcribe_result["raw_segments"][i].speaker = turn.role
 
         # 5. PII Masking
         # Mask sensitive data before storage or LLM processing

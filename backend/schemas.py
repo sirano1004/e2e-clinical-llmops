@@ -18,12 +18,9 @@ class WordInfo(BaseModel):
     is_unclear: bool
 
 class SegmentInfo(BaseModel):
-    id: int
     start: float
     end: float
-    text: str
     speaker: str = Field(default="TBD", description="Speaker ID from Diarization")
-    avg_confidence: float
     words: List[WordInfo]
 
 class TranscriptionResponse(BaseModel):

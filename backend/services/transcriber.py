@@ -8,7 +8,7 @@ import ssl
 ssl._create_default_https_context = ssl._create_unverified_context
 # --- Project Imports (Relative Paths) ---
 from ..core.config import settings
-from ..schemas import DialogueTurn
+from ..schemas import DialogueTurn, SegmentInfo, WordInfo
 from ..core.logger import logger
 class TranscriberService:
     """
@@ -196,12 +196,14 @@ class TranscriberService:
                     should_flag = (conf < threshold) and is_significant
 
                     # --- A. Collect Data for UI (Boolean Flag) ---
-                    segment_ui_words.append({
-                        "word": word_text,
-                        "start": w.get("start", 0.0),
-                        "end": w.get("end", 0.0),
-                        "is_unclear": should_flag # 💡 Simply True/False
-                    })
+                    segment_ui_words.append(
+                        WordInfo(
+                            word=word_text,
+                            start=w.get("start", 0.0),
+                            end=w.get("end",0.0),
+                            is_unclear=should_flag
+                        )
+                    )
 
                     # --- B. Format Text for LLM ---
                     if should_flag:
@@ -226,12 +228,14 @@ class TranscriberService:
             ))
             
             # B. The object for the Frontend UI (Highlights)
-            raw_segments.append({
-                "start": segment.get("start", 0.0),
-                "end": segment.get("end", 0.0),
-                "speaker": speaker,
-                "words": segment_ui_words
-            })
+            raw_segments.append(
+                SegmentInfo(
+                    start=segment.get("start", 0.0),
+                    end=segment.get("end", 0.0),
+                    speaker=speaker,
+                    words=segment_ui_words
+                )
+            )
 
         return {
             "conversation": conversation_output, 
