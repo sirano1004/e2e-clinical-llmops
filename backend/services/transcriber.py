@@ -106,7 +106,7 @@ class TranscriberService:
             gc.collect()
             torch.cuda.empty_cache()
 
-def _format_response(self, result: Dict[str, Any], threshold: float, chunk_index: int) -> Dict[str, Any]:
+    def _format_response(self, result: Dict[str, Any], threshold: float, chunk_index: int) -> Dict[str, Any]:
         """
         Maps raw WhisperX output to our Pydantic schema structure.
         INCLUDES HEURISTIC MERGE: Combines segments if gap < 0.5s.
@@ -156,48 +156,59 @@ def _format_response(self, result: Dict[str, Any], threshold: float, chunk_index
         }
 
         for segment in merged_segments:
-            # Placeholder Speaker (LLM will fix this later)
+            # Default placeholder. The LLM will assign "Doctor" or "Patient" later.
             speaker = "TBD"
-            
-            # We reconstruct the sentence from the 'words' to insert (unclear: tags)
-            segment_llm_words = []
+            segment_text = segment.get("text", "")
+
+            # NLP Analysis for context-aware POS tagging
+            doc = self.nlp(segment_text) if self.nlp else None
+            spacy_tokens = [token for token in doc] if doc else []
+
             segment_ui_words = []
-            
-            # WhisperX segments usually have 'words' from alignment
+            segment_llm_words = []
+
+            # WhisperX segments contain a 'words' list
             if "words" in segment:
-                # Optional: Run NLP on the full merged text for better context
-                # doc = self.nlp(segment["text"]) if self.nlp else None
-                
                 for i, w in enumerate(segment["words"]):
                     word_text = w.get("word", "")
                     conf = round(w.get("score", 0.0), 2)
                     clean_word = word_text.strip()
                     clean_word_lower = clean_word.lower().replace(".", "").replace(",", "").replace("?", "").replace("!", "")
 
-                    # --- Significant Word Logic ---
+                    # --- 🧠 Smart Logic (Calculate ONCE) ---
                     is_significant = False
+                    
+                    # 🚨 Check 1: Is it in the Ignore List? (Priority 1)
                     if clean_word_lower in IGNORE_WORDS:
                         is_significant = False
-                    elif len(clean_word) > 3: 
-                        is_significant = True
+                        
+                    # Check 2: Spacy Analysis (Priority 2)
+                    elif doc and i < len(spacy_tokens):
+                        token = spacy_tokens[i]
+                        if token.pos_ in CRITICAL_POS_TAGS and not token.is_stop:
+                            is_significant = True
+                    else:
+                        # Fallback heuristic: length > 3 implies potential significance
+                        if len(clean_word) > 3:
+                            is_significant = True
                     
-                    # Flag if low confidence AND significant
+                    # Final Decision: Mark as unclear ONLY if low confidence AND significant
                     should_flag = (conf < threshold) and is_significant
 
-                    # 1. Data for UI (Red Underlines)
+                    # --- A. Collect Data for UI (Boolean Flag) ---
                     segment_ui_words.append({
                         "word": word_text,
                         "start": w.get("start", 0.0),
                         "end": w.get("end", 0.0),
-                        "is_unclear": should_flag
+                        "is_unclear": should_flag # 💡 Simply True/False
                     })
 
-                    # 2. Data for LLM (Text Tags)
+                    # --- B. Format Text for LLM ---
                     if should_flag:
                         segment_llm_words.append(f"(unclear: {clean_word})")
                     else:
                         segment_llm_words.append(clean_word)
-                
+            
                 # Rebuild the full text string
                 formatted_sentence = " ".join(segment_llm_words)
 
