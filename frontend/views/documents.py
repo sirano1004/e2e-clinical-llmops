@@ -1,6 +1,8 @@
 import streamlit as st
 from components.note_display import render_soap_note_view, render_soap_note_editor
+from mock.mock_llm import mock_generate_note
 
+@st.fragment(run_every=3)
 def render_documents_view():
     st.success("📝 **Clinical Documents**")
     tab1, tab2, tab3 = st.tabs(["🩺 SOAP Note", "✉️ Referral", "📄 Certificate"])
@@ -15,6 +17,8 @@ def render_documents_view():
             else:
                 # Mode B: View
                 warnings_map = {} 
+                if st.session_state.use_mock_backend:
+                   mock_generate_note()
                 render_soap_note_view(st.session_state.soap_note, warnings_map)
 
     # Tab 2: Referral

@@ -3,6 +3,7 @@ import os
 from pathlib import Path
 from dotenv import load_dotenv
 import streamlit as st
+from session_manager import reset_session
 
 ENV_PATH = Path(__file__).resolve().parent.parent / ".env"
 load_dotenv(ENV_PATH)
@@ -58,6 +59,8 @@ def side_bar() -> None:
         st.info(f"Active API target: {st.session_state.api_url}")
 
         # 2. Chunking Logic
+        if "chunk_duration" not in st.session_state:
+            st.session_state.chunk_duration = 30 # Default value
         st.number_input(
             "Chunk Duration (sec)",
             min_value=5,
@@ -75,6 +78,4 @@ def side_bar() -> None:
             help="If checked, audio chunks are saved to your local 'debug_chunks' folder instead of sent to the API."
         )
         st.divider()
-        if st.button("🔄 Reset Session", use_container_width=True):
-            from session_manager import reset_session
-            reset_session()
+        st.button("🔄 Reset Session", use_container_width=True, on_click=reset_session)

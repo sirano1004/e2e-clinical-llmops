@@ -6,9 +6,7 @@ from datetime import datetime
 # We define the initial state in one place to ensure consistency 
 # between application start and session resets.
 INITIAL_STATE = {
-    "transcript": [
-        {"role": "system", "content": "Session started. Ready to record."}
-    ],
+    "transcript": [],
     "soap_note": {
         "subjective": [],
         "objective": [],
@@ -24,6 +22,7 @@ INITIAL_STATE = {
     "medical_certificate": "",
     "warnings": [],
     "safety_alerts": [],
+    "note_status": "pending",
 
     "chunk_duration": 30,         # Default 30 seconds
     "use_mock_backend": False,    # Default to False (Live Mode)
@@ -59,13 +58,8 @@ def reset_session():
     # 2. Restore Defaults (Loop ensures we never miss a key)
     for key, default_value in INITIAL_STATE.items():
         st.session_state[key] = default_value
-        
-    # 3. Update Transcript with specific reset message
-    st.session_state.transcript = [
-        {"role": "system", "content": f"New session started at {datetime.now().strftime('%H:%M')}."}
-    ]
 
-    # 4. Force UI refresh
+    # 3. Force UI refresh
     st.rerun()
 
 def save_note_callback():

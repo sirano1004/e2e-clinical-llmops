@@ -12,13 +12,17 @@ def render_audio_recorder(session_id: str, api_url: str, chunk_duration: int = 3
             button {{ padding: 10px 20px; border-radius: 8px; border: 1px solid #ddd; cursor: pointer; }}
             #btn-start {{ background-color: #ff4b4b; color: white; border: none; }}
             #btn-start:disabled {{ opacity: 0.5; }}
+            #btn-pause {{ background-color: #ffffff; color: #333; border: 1px solid #ddd; }}
+            #btn-pause:disabled {{ opacity: 0.5; }}
             .recording .dot {{ animation: pulse 1s infinite; background-color: #ff4b4b; }}
             @keyframes pulse {{ 0% {{ opacity: 1; }} 50% {{ opacity: 0.4; }} 100% {{ opacity: 1; }} }}
             .dot {{ height: 8px; width: 8px; background-color: #ccc; border-radius: 50%; display: inline-block; }}
+            .paused .dot {{ animation: none; background-color: #FFBD45; }}
         </style>
     </head>
     <body>
         <button id="btn-start" onclick="startRecording()">▶️ Record</button>
+        <button id="btn-pause" onclick="togglePause()" disabled>⏸️ Pause</button>
         <button id="btn-stop" onclick="stopRecording()" disabled>⏹️ Stop</button>
         <div id="status-display"><span class="dot"></span> <span id="status-text">Ready</span></div>
 
@@ -30,7 +34,9 @@ def render_audio_recorder(session_id: str, api_url: str, chunk_duration: int = 3
             const mode = "{mode}"; 
             let chunkCounter = 0;
             let fileExtension = "webm"; // Default
-
+            let recordingTimer = null; 
+            let accumulatedTime = 0;
+            
             // 1. DYNAMIC FORMAT SELECTION
             function getBestMimeType() {{
                 const types = [
@@ -65,11 +71,14 @@ def render_audio_recorder(session_id: str, api_url: str, chunk_duration: int = 3
                         if (event.data.size > 0) processChunk(event.data);
                     }};
 
-                    mediaRecorder.start(chunkDurationMs);
+                    mediaRecorder.start();
+                    startManualTimer();
 
                     document.getElementById("btn-start").disabled = true;
+                    document.getElementById("btn-pause").disabled = false;
                     document.getElementById("btn-stop").disabled = false;
                     document.getElementById("status-display").classList.add("recording");
+                    document.getElementById("status-display").classList.remove("paused");
                     document.getElementById("status-text").innerText = `Recording (${{fileExtension}})...`;
                 }} catch (err) {{
                     console.error(err);
@@ -77,15 +86,67 @@ def render_audio_recorder(session_id: str, api_url: str, chunk_duration: int = 3
                 }}
             }}
 
+            function togglePause() {{
+                if (!mediaRecorder) return;
+
+                if (mediaRecorder.state === "recording") {{
+                    mediaRecorder.pause();
+                    stopManualTimer(); 
+                    
+                    document.getElementById("btn-pause").innerText = "▶️ Resume";
+                    document.getElementById("status-display").classList.remove("recording");
+                    document.getElementById("status-display").classList.add("paused"); 
+                    document.getElementById("status-text").innerText = "Paused";
+
+                }} else if (mediaRecorder.state === "paused") {{
+                    mediaRecorder.resume();
+                    startManualTimer(); 
+                    
+                    document.getElementById("btn-pause").innerText = "⏸️ Pause";
+                    document.getElementById("status-display").classList.add("recording"); 
+                    document.getElementById("status-display").classList.remove("paused");
+                    document.getElementById("status-text").innerText = "Recording...";
+                }}
+            }}
+
             function stopRecording() {{
+                stopManualTimer();
+
                 if (mediaRecorder && mediaRecorder.state !== "inactive") {{
                     mediaRecorder.stop();
                     mediaRecorder.stream.getTracks().forEach(track => track.stop());
                 }}
                 document.getElementById("btn-start").disabled = false;
+                document.getElementById("btn-pause").disabled = true;
                 document.getElementById("btn-stop").disabled = true;
                 document.getElementById("status-display").classList.remove("recording");
+                document.getElementById("status-display").classList.remove("paused");
                 document.getElementById("status-text").innerText = "Stopped.";
+                document.getElementById("btn-pause").innerText = "⏸️ Pause";
+            }}
+
+            function startManualTimer() {{
+                if (recordingTimer) clearInterval(recordingTimer);
+
+                recordingTimer = setInterval(() => {{
+                    accumulatedTime += 1000; 
+                    
+                    // console.log("Time:", accumulatedTime); 
+
+                    if (accumulatedTime >= chunkDurationMs) {{
+                        if (mediaRecorder.state === "recording") {{
+                            mediaRecorder.requestData(); 
+                        }}
+                        accumulatedTime = 0; 
+                    }}
+                }}, 1000);
+            }}
+
+            function stopManualTimer() {{
+                if (recordingTimer) {{
+                    clearInterval(recordingTimer);
+                    recordingTimer = null;
+                }}
             }}
 
             async function processChunk(blob) {{
