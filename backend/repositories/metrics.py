@@ -13,6 +13,15 @@ class MetricsService:
     Manages session state (Dialogue History & SOAP Note) using Redis.
     Acts as the 'Memory Manager' for the application.
     """
+    
+    def _parse_redis_value(self, v: str) -> Union[int, float, str]:
+        """Intelligently convert Redis string to int or float"""
+        try:
+            f_val = float(v)
+            # If it's a whole number like 3.0, convert to int; otherwise keep as float like 3.5
+            return int(f_val) if f_val.is_integer() else f_val
+        except (ValueError, TypeError):
+            return v  # If not a number, return as string
 
     # 💡 Metrics Management (Atomic Increments)
     async def update_metrics(self, session_id: str, metrics: Union[Dict[str, int], float, int], field: Optional[str] = None):
@@ -62,8 +71,8 @@ class MetricsService:
         
         # Redis returns dict values as strings, so we convert them back to integers
         # Example: {'hallucination_count': '2'} -> {'hallucination_count': 2}
-        return {k: int(v) for k, v in data.items()}
-
+        return {k: self._parse_redis_value(v) for k, v in data.items()}
+            
     async def update_feedback_stats(self, session_id: str, similarity: Optional[float], distance: Optional[int], action: str):
         """
         Aggregates human feedback metrics into Redis atomically.

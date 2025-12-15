@@ -73,8 +73,7 @@ async def ingest_audio_chunk(
                 session_id=session_id,
                 interaction_id="empty",
                 generated_summary=await document_service.get_soap_note(session_id) or SOAPNote(),
-                model_used="none",
-                processing_time_ms=0
+                chunk_index=chunk_index
             )
 
         # 4. Role Assignment (Tagging)
@@ -112,7 +111,7 @@ async def ingest_audio_chunk(
             session_id=session_id,
             dialogue_history=full_history, # Full context for Prefix Caching
             existing_notes=current_note,   # Context for delta extraction
-            current_chunk_index=chunk_index, # For ID generation
+            chunk_index=chunk_index, # For ID generation
             task_type="soap" # Incremental Update Mode
         )
         
@@ -177,9 +176,8 @@ async def ingest_audio_chunk(
             shutil.rmtree(temp_dir)
 
 async def run_guardrail_background(session_id, transcript, summary, chunk_index):
-    guard_result = await guardrail_service.check_hallucination(session_id, transcript, summary)
+    warnings = await guardrail_service.check_hallucination(session_id, transcript, summary)
     
-    warnings = guard_result.get("warnings", [])
     if warnings:        
         await notification_service.add_warning(session_id, warnings, chunk_index)
         logger.warning(f"⚠️ [Background] Chunk {chunk_index} Guardrail Warnings: {warnings}")
