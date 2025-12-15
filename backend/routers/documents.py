@@ -17,26 +17,31 @@ router = APIRouter()
 
 @router.post("/generate_document", response_model=ScribeResponse)
 async def generate_derived_document(
-    request: ScribeRequest
+    session_id: str,
+    task_type: str
 ):
     """
     Generates derived documents (Referral, Certificate) based on the FINAL SOAP note.
     Does NOT update the SOAP note state in Redis.
     """
-    logger.info(f"📄 Generating {request.task_type} for session {request.session_id}")
+    logger.info(f"📄 Generating {task_type} for session {session_id}")
     
     try:
         # 1. Fetch Full Context
         # We need the full history and the finalized SOAP note
-        history = await conversation_service.get_dialogue_history(request.session_id)
-        current_soap = await document_service.get_soap_note(request.session_id)
+        history = await conversation_service.get_dialogue_history(session_id)
+        current_soap = await document_service.get_soap_note(session_id)
         
         if not current_soap:
             raise HTTPException(status_code=400, detail="No SOAP note found. Complete consultation first.")
             
         # 2. Update Request Context
-        request.dialogue_history = history
-        request.existing_notes = current_soap # Used as reference context
+        request = ScribeRequest(
+            session_id=session_id,
+            dialogue_history=history,
+            existing_notes=current_soap,
+            task_type=task_type
+        )
         
         # 3. Generate (LLM)
         response = await llm_service.generate_scribe(request)

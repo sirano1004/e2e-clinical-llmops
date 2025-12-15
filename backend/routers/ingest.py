@@ -32,10 +32,10 @@ router = APIRouter()
 
 @router.post("/ingest_chunk", response_model=ScribeResponse)
 async def ingest_audio_chunk(
+    background_tasks: BackgroundTasks,
     session_id: str = Form(...),
     file: UploadFile = File(...),
-    is_last_chunk: bool = Form(False),
-    background_tasks = BackgroundTasks
+    is_last_chunk: bool = Form(False)
 ):
     """
     Receives an audio chunk (30s-1m), processes it, and updates the SOAP note.
