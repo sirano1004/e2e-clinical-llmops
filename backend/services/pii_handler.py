@@ -118,6 +118,7 @@ class MedicalPIIHandler:
             masked_history.append(DialogueTurn(
                 role=turn.role,
                 content=anonymized_result.text,
+                chunk_index=turn.chunk_index,
                 timestamp=turn.timestamp
             ))
 
