@@ -7,7 +7,7 @@ from fastapi import APIRouter, UploadFile, File, Form, HTTPException, status
 # --- Project Imports ---
 from ..repositories.conversation import conversation_service
 from ..core.logger import logger
-from ..worker import process_audio_chunk
+from ..core.celery_app import celery_app
 
 router = APIRouter()
 
@@ -41,11 +41,14 @@ async def ingest_audio_chunk(
         logger.info(f"🎫 [Ingest] Assigned Ticket #{chunk_index} to Session {session_id}")
 
         # 3. Celery Task
-        process_audio_chunk.delay(
-            file_path=file_path,
-            session_id=session_id,
-            chunk_index=chunk_index,
-            is_last_chunk=is_last_chunk
+        celery_app.send_task(
+            "process_audio_chunk", # task 이름 (worker @task 데코레이터의 name과 일치해야 함)
+            kwargs={
+                "file_path": file_path,
+                "session_id": session_id,
+                "chunk_index": chunk_index,
+                "is_last_chunk": is_last_chunk
+            }
         )
 
         # 4. Immediate Response
