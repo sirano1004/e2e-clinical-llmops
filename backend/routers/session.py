@@ -14,7 +14,6 @@ router = APIRouter()
 
 @router.get("/check_notifications")
 async def check_notifications(
-
     session_id: str, 
     chunk_index: Optional[int] = None # Frontend sends this to get specific alerts
 ):
@@ -24,7 +23,7 @@ async def check_notifications(
     - If chunk_index is omitted: Checks all pending warnings.
     """
     # Fetch from Redis Hash
-    results = asyncio.gather(
+    results = await asyncio.gather(
         notification_service.get_warnings(session_id, chunk_index),
         notification_service.get_safety_alerts(session_id)
     )

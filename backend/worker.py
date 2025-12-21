@@ -43,7 +43,9 @@ def check_services_health(**kwargs):
         "LLM Service": llm_service,
         "Transcriber": transcriber_service,
         "PII Handler": pii_service,
-        "Safety Service": safety_service
+        "Safety Service": safety_service,
+        "Role Service": role_service,
+        "Guardrail Service": guardrail_service
     }
 
     failed = []

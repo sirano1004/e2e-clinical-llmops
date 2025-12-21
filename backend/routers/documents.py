@@ -1,7 +1,6 @@
 from fastapi import APIRouter, HTTPException, status
 from celery.result import AsyncResult
 # --- Project Imports ---
-from ..tasks.documents import generate_document_task
 from ..core.celery_app import celery_app
 from ..core.logger import logger
 
@@ -21,7 +20,7 @@ async def generate_derived_document(
     
     try:
         # Update Request Context
-        
+
         task = celery_app.send_task(
             "generate_document_task", # task 이름 (worker @task 데코레이터의 name과 일치해야 함)
             kwargs={
