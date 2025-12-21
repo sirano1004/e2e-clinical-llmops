@@ -2,6 +2,7 @@ import sys
 import os
 from celery.signals import worker_process_init, worker_ready
 from .core.logger import logger
+from .core.celery_app import celery_app
 
 # 1. Wrap services in try-except for Import (Fail Fast)
 # If errors occur during model loading (GPU OOM, missing keys), terminate worker immediately.

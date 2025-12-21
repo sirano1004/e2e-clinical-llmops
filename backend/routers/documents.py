@@ -21,8 +21,15 @@ async def generate_derived_document(
     
     try:
         # Update Request Context
-        task = generate_document_task.delay(session_id, task_type)
-    
+        
+        task = celery_app.send_task(
+            "generate_document_task", # task 이름 (worker @task 데코레이터의 name과 일치해야 함)
+            kwargs={
+                "session_id": session_id,
+                "task_type": task_type,
+            }
+        )
+
         return {
                 "status": "queued",
                 "task_id": task.id,

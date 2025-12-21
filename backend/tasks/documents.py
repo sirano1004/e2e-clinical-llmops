@@ -28,7 +28,7 @@ RETRYABLE_ERRORS = (
     TimeoutError
 )
 
-@celery_app.task(bind=True, max_retries=2)
+@celery_app.task(bind=True, max_retries=2, name="generate_document_task")
 @async_worker_task
 async def generate_document_task(self, session_id: str, task_type: str):
     """
