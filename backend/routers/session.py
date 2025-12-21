@@ -1,3 +1,4 @@
+import asyncio
 from typing import Optional
 from fastapi import APIRouter, Form, HTTPException
 
@@ -8,6 +9,7 @@ from ..services.feedback_service import feedback_service
 # Repositories
 from ..repositories.conversation import conversation_service
 from ..repositories.notification import notification_service
+from ..repositories.documents import document_service
 router = APIRouter()
 
 @router.get("/check_notifications")
@@ -22,9 +24,13 @@ async def check_notifications(
     - If chunk_index is omitted: Checks all pending warnings.
     """
     # Fetch from Redis Hash
-    warnings = await notification_service.get_warnings(session_id, chunk_index)
-    # Fetch Safety Alerts (Guardrails, Medical Risks)
-    safety_alerts = await notification_service.get_safety_alerts(session_id)
+    results = asyncio.gather(
+        notification_service.get_warnings(session_id, chunk_index),
+        notification_service.get_safety_alerts(session_id)
+    )
+    
+    warnings = results[0]
+    safety_alerts = results[1]
 
     response = {
         "warnings": warnings,        # Frontend: Show generally (Yellow/Toast)
@@ -42,6 +48,13 @@ async def get_transcript(session_id: str):
     poll for transcribed conversation
     """
     return await conversation_service.get_ui_segments(session_id)
+
+@router.get("/get_soap_note")
+async def get_soap_note(session_id: str):
+    """
+    poll for current SOAP note state
+    """
+    return await document_service.get_soap_note(session_id)
 
 @router.post("/stop_session")
 async def stop_session(session_id: str = Form(...)):

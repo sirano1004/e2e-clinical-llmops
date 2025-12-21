@@ -99,6 +99,29 @@ class ConversationService:
         # We return the 0-based index (0, 1, 2, ...)
         return new_count - 1
     
+    async def get_expected_chunk_index(self, session_id: str) -> int:
+        """
+        Retrieves the expected next chunk index for ordering purposes.
+        Used by the worker to determine if it's their turn to process.
+        """
+        client = redis_client.get_instance()
+        key = f"session:{session_id}:next_chunk"
+        
+        value = await client.get(key)
+        if value is None:
+            return 0
+        return int(value)
+    
+    async def increment_expected_chunk_index(self, session_id: str):
+        """
+        Increments the expected chunk index by 1.
+        Called by the worker after successfully processing a chunk.
+        """
+        client = redis_client.get_instance()
+        key = f"session:{session_id}:next_chunk"
+        
+        await client.incr(key)
+    
     async def clear_session(self, session_id: str):
         """
         Completely wipes ALL data related to a session.

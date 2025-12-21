@@ -1,7 +1,5 @@
 import time
 import json
-import re
-import asyncio
 from typing import Dict, Any, Optional, List, Union
 
 # --- VLLM Core Imports ---
@@ -249,11 +247,14 @@ class LLMHandler:
         if task_type in ["soap"]:
             try:
                 # Regex to find the first JSON object in the output (ignoring Markdown)
-                json_match = re.search(r"\{.*?\}", raw_text, re.DOTALL)
-                clean_json = json_match.group(0) if json_match else raw_text
+                clean_text = raw_text.strip()
+                if "```" in clean_text:
+                    clean_text = clean_text.split("```")[1]
+                    if clean_text.startswith("json"):
+                        clean_text = clean_text[4:] # remove 'json'
                 
                 # Load JSON
-                data = json.loads(clean_json)
+                data = json.loads(clean_text)
                 
                 # Convert raw strings to SOAPItems with ID & Source
                 structured_data = {}

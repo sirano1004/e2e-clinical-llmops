@@ -2,6 +2,7 @@ import os
 import torch
 import whisperx
 import gc
+import asyncio
 from typing import Dict, Any, List
 import spacy
 import ssl
@@ -60,7 +61,19 @@ class TranscriberService:
             self.nlp = spacy.load("en_core_web_lg", disable=["ner", "parser"])
         except:
             self.nlp = None
-    def transcribe_audio(self, audio_path: str, chunk_index: int, confidence_threshold: float = 0.6) -> Dict[str, Any]:
+
+    async def transcribe_audio(self, audio_path: str, chunk_index: int, confidence_threshold: float = 0.6) -> Dict[str, Any]:
+        """
+        Async wrapper for the transcription pipeline.
+        """
+        return await asyncio.to_thread(
+            self._transcribe_audio, 
+            audio_path, 
+            chunk_index, 
+            confidence_threshold
+        )
+    
+    def _transcribe_audio(self, audio_path: str, chunk_index: int, confidence_threshold: float = 0.6) -> Dict[str, Any]:
         """
         Executes the full pipeline: Transcribe -> Align -> Diarize -> Format.
         Returns a dictionary compatible with the TranscriptionResponse schema.

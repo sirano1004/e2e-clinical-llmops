@@ -19,8 +19,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from .core.config import settings
 from .core.logger import logger, session_context
 from .core.redis_client import redis_client
-# Services
-from .services.llm_handler import llm_service
 # Routers (Import the new routers)
 from .routers import ingest, session, documents, feedback
 
@@ -30,10 +28,6 @@ async def lifespan(app: FastAPI):
     # 1. Startup: Connect to Infrastructure
     logger.info("🚀 Starting Clinical Scribe Backend...")
     await redis_client.connect()
-    
-    # Verify Model Loading (Optional health check)
-    if not llm_service.engine:
-        logger.error("❌ vLLM Engine not initialized properly!")
     
     yield
     
