@@ -39,13 +39,16 @@ async def submit_human_feedback(
         # Get current Soap
         current_soap = await document_service.get_soap_note(session_id)
 
+        # convert current_soap to string for original_output
+        current_soap_str = current_soap.model_dump_json() if current_soap else ""
+
         # Delegate to FeedbackService
         # It handles fetching original output, context, metrics calculation, and routing.
         metrics = await feedback_service.save_feedback(
             session_id=session_id,
             task_type='soap', # For now only support soap
-            original_output=current_soap,
-            edited_output=parsed_content,
+            original_output=current_soap_str,
+            edited_output=edited_content,
             action=feedback_type
         )
         

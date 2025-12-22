@@ -5,7 +5,8 @@ from datetime import datetime
 from typing import Dict, Any, List
 
 # --- Project Imports ---
-from .config import settings
+from ..core.config import settings
+from ..core.logger import logger
 
 class LocalStorageClient:
     """
@@ -18,7 +19,7 @@ class LocalStorageClient:
         self.data_dir = settings.data_dir
         if not os.path.exists(self.data_dir):
             os.makedirs(self.data_dir, exist_ok=True)
-            print(f"📁 Created data directory: {self.data_dir}")
+            logger.info(f"📁 Created data directory: {self.data_dir}")
 
     async def append_record(self, filename: str, record: Dict[str, Any]):
         """
@@ -43,7 +44,7 @@ class LocalStorageClient:
                 await f.write(json_line + "\n")
                 
         except Exception as e:
-            print(f"❌ Failed to write to {filename}: {e}")
+            logger.error(f"❌ Failed to write to {filename}: {e}")
             raise e
 
     async def get_all_records(self, filename: str) -> List[Dict[str, Any]]:
@@ -62,7 +63,7 @@ class LocalStorageClient:
                     if line.strip():
                         records.append(json.loads(line))
         except Exception as e:
-            print(f"❌ Failed to read {filename}: {e}")
+            logger.error(f"❌ Failed to read {filename}: {e}")
             return []
             
         return records

@@ -6,8 +6,7 @@ from ..core.redis_client import redis_client
 from ..core.config import settings
 from ..schemas import (
     DialogueTurn, 
-    SegmentInfo,
-    WordInfo
+    SegmentInfo
 )
 
 # Session TimeOUt
@@ -95,6 +94,7 @@ class ConversationService:
         # INCR atomically increments the value (1, 2, 3, ...)
         # It returns the *new* count (1-based).
         new_count = await client.incr(key)
+        await client.expire(key, SESSION_TTL)
         
         # We return the 0-based index (0, 1, 2, ...)
         return new_count - 1
@@ -108,6 +108,7 @@ class ConversationService:
         key = f"session:{session_id}:next_chunk"
         
         value = await client.get(key)
+        
         if value is None:
             return 0
         return int(value)
@@ -121,6 +122,7 @@ class ConversationService:
         key = f"session:{session_id}:next_chunk"
         
         await client.incr(key)
+        await client.expire(key, SESSION_TTL)
     
     async def clear_session(self, session_id: str):
         """
