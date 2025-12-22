@@ -92,7 +92,7 @@ def mock_generate_transcript():
   'words': [{'word': 'Okay.',
     'start': 24.661,
     'end': 26.503,
-    'is_unclear': False}]},
+    'is_unclear': True}]},
  {'start': 27.284,
   'end': 29.647,
   'speaker': 'Doctor',

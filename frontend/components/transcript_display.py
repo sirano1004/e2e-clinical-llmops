@@ -35,8 +35,8 @@ def render_live_transcript(segments):
         for w in words:
             word_text = w.get("word", "")
             if w.get("is_unclear", False):
-                # Use gray for a softer "unclear" highlight instead of red
-                markdown_parts.append(f":gray[{word_text}]")
+                # Use warning/red styling to highlight uncertain words
+                markdown_parts.append(f":red[{word_text}]")
             else:
                 markdown_parts.append(word_text)
         

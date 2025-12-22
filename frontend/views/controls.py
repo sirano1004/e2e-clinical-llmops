@@ -1,8 +1,8 @@
 import streamlit as st
 from components.audio_recorder import render_audio_recorder
-from api_client import poll_session_state, stop_session_api, generate_document_api
-from session_manager import reset_session
+from api_client import submit_feedback, generate_document_api, fetch_session_tasks
 import time
+import json
 
 def render_audio_controls():
     st.subheader("🎙️ Audio Controls")
@@ -42,12 +42,20 @@ def render_action_controls():
                 if st.button("✅ Accept", use_container_width=True):
                     st.session_state.note_status = "accepted"
                     st.toast("SOAP Note Accepted & Saved!")
+                    submit_feedback(
+                        st.session_state.session_id, 
+                        "accept"
+                    )
                     st.rerun()
 
             with c_reject:
                 if st.button("❌ Reject", use_container_width=True):
                     st.session_state.doctor_note = ""
                     st.session_state.note_status = "rejected"
+                    submit_feedback(
+                        st.session_state.session_id, 
+                        "reject"
+                    )
                     st.rerun()
     
     elif st.session_state.note_status == "editing":
@@ -57,16 +65,18 @@ def render_action_controls():
             if st.button("💾 Save Changes", use_container_width=True, type="primary"):
                 st.session_state.is_editing = False
                 st.session_state.note_status = "edited"
-                # 저장을 눌렀다고 해서 바로 Accept 처리를 할지, 다시 버튼을 보여줄지는 선택
-                # 여기서는 다시 버튼을 보여주는 걸로 (Pending 유지)
+                submit_feedback(
+                    st.session_state.session_id, 
+                    "edit",
+                    edited_content=json.dumps(st.session_state.soap_note_buffer)
+                )
+                st.toast("✅ Changes Saved!")
                 st.rerun()
         with c_cancel:
             if st.button("↩️ Cancel", use_container_width=True):
                 st.session_state.is_editing = False
                 st.session_state.note_status = "pending"
                 st.rerun()        
-
-    
 
         st.divider()
     # Document Generation Buttons
@@ -76,17 +86,57 @@ def render_action_controls():
     with c_ref:
         if st.button("✉️ Gen Referral", use_container_width=True):
             with st.spinner("Generating Referral..."):
-                content = generate_document_api(st.session_state.session_id, "referral")
-                if content:
-                    st.session_state.referral_letter = content
-                    st.toast("Referral Generated!")
+                task_id = generate_document_api(st.session_state.session_id, "referral")
+                if task_id is not None:
+                    for _ in range(20):  # Max 20 attempts (10 seconds)
+                        # 1. Check status (200 OK on success)
+                        result = fetch_session_tasks(task_id)
+                        status = result.get("status")  # PENDING, SUCCESS, FAILURE
+
+                        # 2. Handle based on status
+                        if status == "completed":
+                            st.session_state.referral_letter = result.get("result").get("data")
+                            st.toast("Referral Generated!")
+                            st.rerun()
+                            break  # Exit loop
+                        
+                        elif status == "failed":
+                            st.error(f"Failed: {result.get('error')}")
+                            break  # Exit loop
+                        
+                        elif status == "processing":
+                            # Still processing -> do nothing and wait
+                            pass 
+                        
+                        # 3. Wait 0.5 seconds then check again
+                        time.sleep(0.5)
+                    else:
+                        st.error("Timeout: Taking too long.")
                     st.rerun()
     
     with c_cert:
         if st.button("📄 Gen Certificate", use_container_width=True):
             with st.spinner("Generating Certificate..."):
-                content = generate_document_api(st.session_state.session_id, "certificate")
-                if content:
-                    st.session_state.medical_certificate = content
-                    st.toast("Certificate Generated!")
+                task_id = generate_document_api(st.session_state.session_id, "certificate")
+                if task_id is not None:
+                    for _ in range(20):  # Max 20 attempts (10 seconds)
+                        result = fetch_session_tasks(task_id)
+                        status = result.get("status")
+                        
+                        if status == "completed":
+                            st.session_state.medical_certificate = result.get("result").get("data")
+                            st.toast("Certificate Generated!")
+                            st.rerun()
+                            break
+                        
+                        elif status == "failed":
+                            st.error(f"Failed: {result.get('error')}")
+                            break
+                        
+                        elif status == "processing":
+                            pass  # Still processing
+                        
+                        time.sleep(0.5)
+                    else:
+                        st.error("Timeout: Taking too long.")
                     st.rerun()

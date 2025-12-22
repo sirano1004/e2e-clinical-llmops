@@ -4,9 +4,9 @@ from api_client import fetch_transcript_data
 from mock.mock_llm import mock_generate_transcript
 
 # 💡 Use @st.fragment to isolate this part of the UI.
-# 'run_every=3' automatically re-runs this function every 3 seconds
+# 'run_every=1' automatically re-runs this function every 1 second
 # without reloading the entire page or resetting the editor.
-@st.fragment(run_every=3)
+@st.fragment(run_every=1)
 def render_transcript_view():
     """
     Renders the live transcript area. 
@@ -18,8 +18,11 @@ def render_transcript_view():
         if st.session_state.use_mock_backend:
             mock_generate_transcript()
         else:
-            fetch_transcript_data()
-        
+            transcript = fetch_transcript_data(st.session_state.session_id)
+
+            if transcript:
+                st.session_state.transcript = transcript
+
         if st.session_state.transcript:
             # Fetch fresh segments from backend              
             render_live_transcript(st.session_state.transcript)

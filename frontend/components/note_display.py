@@ -1,7 +1,6 @@
 import streamlit as st
 from styles import NOTE_STYLES
 
-
 def render_soap_note_view(soap_note, warnings_map):
     """
     [View Mode] Renders the SOAP note with highlights based on chunk_index.
@@ -27,17 +26,28 @@ def render_soap_note_view(soap_note, warnings_map):
             text = item.get("text", "")
             chunk_idx = item.get("source_chunk_index", -1)
 
-            chunk_warnings = warnings_map.get(str(chunk_idx), [])
+            chunk_warnings = warnings_map.get(int(chunk_idx), [])
 
             if chunk_warnings:
-                warning_msg = " | ".join(chunk_warnings["warnings"])
+                formatted_msgs = "<br>• ".join(chunk_warnings)
+
                 st.markdown(
-                    f"<div class='note-warning'><span class='note-warning-title'>Warning:</span>{text}<br>{warning_msg}</div>",
+                    f"""
+                    <div class='note-item'>
+                        - <span class='warning-highlight'>
+                            {text}
+                            <span class='tooltip-text'>
+                                <strong>⚠️ Warning (Chunk {chunk_idx})</strong><br>
+                                • {formatted_msgs}
+                            </span>
+                        </span>
+                    </div>
+                    """,
                     unsafe_allow_html=True,
                 )
-            else:
-                st.markdown(f"<p class='note-item'>- {text}</p>", unsafe_allow_html=True)
 
+            else:
+                st.markdown(f"<div class='note-item'>- {text}</div>", unsafe_allow_html=True)
         st.markdown("<div class='note-divider'></div>", unsafe_allow_html=True)
 
 

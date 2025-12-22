@@ -1,5 +1,4 @@
 import streamlit as st
-import time
 
 # --- Project Views ---
 from views.sidebar import side_bar
@@ -9,8 +8,7 @@ from views.documents import render_documents_view
 from views.controls import render_audio_controls, render_action_controls
 
 # --- Project Imports ---
-from session_manager import init_session_state, reset_session, save_note_callback
-from components.note_display import render_soap_note_view, render_soap_note_editor
+from session_manager import init_session_state
 
 
 def main():

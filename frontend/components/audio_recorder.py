@@ -36,6 +36,7 @@ def render_audio_recorder(session_id: str, api_url: str, chunk_duration: int = 3
             let fileExtension = "webm"; // Default
             let recordingTimer = null; 
             let accumulatedTime = 0;
+            let isStopping = false;
             
             // 1. DYNAMIC FORMAT SELECTION
             function getBestMimeType() {{
@@ -111,6 +112,7 @@ def render_audio_recorder(session_id: str, api_url: str, chunk_duration: int = 3
 
             function stopRecording() {{
                 stopManualTimer();
+                isStopping = true;
 
                 if (mediaRecorder && mediaRecorder.state !== "inactive") {{
                     mediaRecorder.stop();
@@ -168,7 +170,9 @@ def render_audio_recorder(session_id: str, api_url: str, chunk_duration: int = 3
                     const formData = new FormData();
                     formData.append("session_id", sessionId);
                     formData.append("file", blob, filename);
-                    formData.append("is_last_chunk", "false");
+                    formData.append("is_last_chunk", isStopping ? "true" : "false");
+
+                    if (isStopping) isStopping = false;
 
                     try {{
                         const response = await fetch(`${{apiUrl}}/ingest_chunk`, {{
