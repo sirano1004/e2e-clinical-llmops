@@ -5,8 +5,6 @@ import gc
 import asyncio
 from typing import Dict, Any, List
 import spacy
-import ssl
-ssl._create_default_https_context = ssl._create_unverified_context
 # --- Project Imports (Relative Paths) ---
 from ..core.config import settings
 from ..schemas import DialogueTurn, SegmentInfo, WordInfo
