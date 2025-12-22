@@ -19,14 +19,15 @@ def live_render_soap_note():
         if soap_note:
             st.session_state.soap_note = soap_note
         warnings_response = fetch_warnings(st.session_state.session_id)
-        # warnings_response가 None이거나 비어있을 경우 대비
+        # Handle case where warnings_response is None or empty
         if warnings_response:
             raw_warnings_list = warnings_response.get("warnings", [])
             for w in raw_warnings_list:
                 c_idx = int(w.get("chunk_index"))
                 msgs = w.get("warnings", [])
                 
-                # chunk_index가 유효하고 메시지가 있는 경우만 맵에 등록
+                # Only add to map if chunk_index is valid and messages exist
+
                 if c_idx is not None and msgs:
                     warnings_map[c_idx] = msgs
 
