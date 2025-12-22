@@ -3,14 +3,12 @@ import asyncio
 import re
 from typing import List, Set, Union, Dict, Any
 
-# --- Hugging Face Libraries ---
-from transformers import pipeline
-from sentence_transformers import CrossEncoder
-
 # --- Project Imports ---
 from ..schemas import DialogueTurn
 from ..core.logger import logger
-from .session_service import session_service
+from ..core.load_models import get_ner_pipeline, get_nli_pipeline
+# Repositories
+from ..repositories.metrics import metrics_service
 
 class GuardrailService:
     """
@@ -31,12 +29,7 @@ class GuardrailService:
         # aggregation_strategy="simple" merges tokens like "di" "##abe" "##tes" into "diabetes".
         try:
             logger.info("🛡️ Loading HF NER Pipeline (d4data/biomedical-ner-all)...")
-            self.ner_pipeline = pipeline(
-                "token-classification", 
-                model="d4data/biomedical-ner-all", 
-                aggregation_strategy="first",
-                device=-1 # Run on CPU (-1) to save GPU for vLLM
-            )
+            self.ner_pipeline = get_ner_pipeline()
             logger.info("✅ Medical NER pipeline loaded.")
         except Exception as e:
             logger.exception(f"❌ Failed to load NER pipeline: {e}")
@@ -46,7 +39,7 @@ class GuardrailService:
         try:
             model_id = "cross-encoder/nli-deberta-v3-base"
             logger.info(f"🛡️ Loading Medical NLI Model ({model_id})...")
-            self.nli_model = CrossEncoder(model_id, device='cpu')
+            self.nli_model = get_nli_pipeline()
             
             # MedNLI Label Mapping: 0: Contradiction, 1: Entailment, 2: Neutral
             self.label_map = {0: "contradiction", 1: "entailment", 2: "neutral"}
@@ -83,7 +76,7 @@ class GuardrailService:
             
             # Save metrics to redis
             if analysis_result['metrics']:
-                await session_service.update_metrics(session_id, analysis_result['metrics'])
+                await metrics_service.update_metrics(session_id, analysis_result['metrics'])
 
             return analysis_result['warnings']
 

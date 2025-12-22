@@ -1,3 +1,4 @@
+import asyncio
 from typing import List
 from presidio_analyzer import AnalyzerEngine, PatternRecognizer, Pattern, RecognizerRegistry
 from presidio_anonymizer import AnonymizerEngine
@@ -76,7 +77,7 @@ class MedicalPIIHandler:
         )
         registry.add_recognizer(disease_recognizer)
 
-    def mask_dialogue(self, history: List[DialogueTurn]) -> List[DialogueTurn]:
+    def _mask_dialogue(self, history: List[DialogueTurn]) -> List[DialogueTurn]:
         """
         Iterates through the dialogue history and masks sensitive entities.
         """
@@ -118,10 +119,18 @@ class MedicalPIIHandler:
             masked_history.append(DialogueTurn(
                 role=turn.role,
                 content=anonymized_result.text,
+                chunk_index=turn.chunk_index,
                 timestamp=turn.timestamp
             ))
 
         return masked_history
+
+    async def mask_dialogue(self, history: List[DialogueTurn]) -> List[DialogueTurn]:
+        """
+        Async wrapper for masking dialogue history.
+        """
+        return await asyncio.to_thread(self._mask_dialogue, history)
+
 
 # Singleton
 pii_service = MedicalPIIHandler()

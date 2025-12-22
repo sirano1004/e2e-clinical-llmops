@@ -18,12 +18,9 @@ class WordInfo(BaseModel):
     is_unclear: bool
 
 class SegmentInfo(BaseModel):
-    id: int
     start: float
     end: float
-    text: str
-    speaker: str = Field(default="UNKNOWN", description="Speaker ID from Diarization")
-    avg_confidence: float
+    speaker: str = Field(default="TBD", description="Speaker ID from Diarization")
     words: List[WordInfo]
 
 class TranscriptionResponse(BaseModel):
@@ -54,6 +51,12 @@ class SOAPNote(BaseModel):
         self.objective.extend(new_note.objective)
         self.assessment.extend(new_note.assessment)
         self.plan.extend(new_note.plan)
+
+class SOAPNoteGeneration(BaseModel):
+    subjective: List[str]
+    objective: List[str]
+    assessment: List[str]
+    plan: List[str]
 
 # --- 2. Input ---
 class ScribeRequest(BaseModel):

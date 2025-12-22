@@ -39,3 +39,4 @@ temp_*
 
 # --- Other ---
 *.pem
+*ssl*

@@ -1,13 +1,11 @@
 import time
 import json
-import re
-import asyncio
 from typing import Dict, Any, Optional, List, Union
 
 # --- VLLM Core Imports ---
 from vllm.engine.async_llm_engine import AsyncLLMEngine
 from vllm.engine.arg_utils import AsyncEngineArgs
-from vllm.sampling_params import SamplingParams
+from vllm.sampling_params import SamplingParams, GuidedDecodingParams
 from vllm.lora.request import LoRARequest
 
 # --- HF Tokenizer Import ---
@@ -21,14 +19,15 @@ from ..schemas import (
     ScribeRequest, 
     ScribeResponse, 
     SOAPNote,
-    SOAPItem
+    SOAPItem,
+    SOAPNoteGeneration
 ) 
 # Import Custom Logger
 from ..core.logger import logger
 # Import prompt for each task
 from ..prompts import get_system_prompt, get_suffix_prompt
 # Import Redis session service
-from .session_service import session_service
+from ..repositories.metrics import metrics_service
 
 class LLMHandler:
     """
@@ -95,7 +94,8 @@ class LLMHandler:
     async def _execute_prompt(self, 
                              messages: List[Dict[str, str]],
                              temperature: float,
-                             lora_request_object: Optional[LoRARequest] = None) -> str:
+                             lora_request_object: Optional[LoRARequest] = None,
+                             guided_decoding: Optional[GuidedDecodingParams] = None) -> str:
         """
         Executes a raw prompt against the VLLM engine asynchronously.
         This is a reusable core function that handles the AsyncGenerator stream.
@@ -116,6 +116,7 @@ class LLMHandler:
             temperature=temperature,
             max_tokens=settings.vllm_max_output_tokens, # Cap output length (e.g., 2048)
             stop=settings.vllm_stop_sequences,          # Stop tokens (e.g., <|eot_id|>)
+            guided_decoding=guided_decoding
         )
         
         try:
@@ -211,12 +212,13 @@ class LLMHandler:
         raw_response = await self._execute_prompt(
             messages=messages,
             temperature=request.temperature,
-            lora_request_object=lora_request_object
+            lora_request_object=lora_request_object,
+            guided_decoding=GuidedDecodingParams(json=SOAPNoteGeneration.model_json_schema())
         )
         
         duration = (time.time() - start_time) * 1000
 
-        await session_service.update_metrics(request.session_id, duration, 'total_latency_ms')
+        await metrics_service.update_metrics(request.session_id, duration, 'total_latency_ms')
         
         # Calculate current chunk index (Source ID)
         # Assuming the new info comes from the latest chunk added
@@ -245,11 +247,14 @@ class LLMHandler:
         if task_type in ["soap"]:
             try:
                 # Regex to find the first JSON object in the output (ignoring Markdown)
-                json_match = re.search(r"\{.*?\}", raw_text, re.DOTALL)
-                clean_json = json_match.group(0) if json_match else raw_text
+                clean_text = raw_text.strip()
+                if "```" in clean_text:
+                    clean_text = clean_text.split("```")[1]
+                    if clean_text.startswith("json"):
+                        clean_text = clean_text[4:] # remove 'json'
                 
                 # Load JSON
-                data = json.loads(clean_json)
+                data = json.loads(clean_text)
                 
                 # Convert raw strings to SOAPItems with ID & Source
                 structured_data = {}

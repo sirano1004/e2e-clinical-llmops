@@ -1,26 +1,27 @@
 import re
 import asyncio
 from typing import List, Dict, Any, Optional, Tuple
+
 from ..core.logger import logger
+from ..core.load_models import get_ner_pipeline
 
 class ClinicalSafetyService:
     """
-    Clinical Safety Layer (Rule-Based + Knowledge Graph).
-    
-    This service is designed to be a placeholder for a robust graph database check,
-    performing dosage verification against a hard-coded set of limits.
+    Clinical Safety Layer (NER + Knowledge Graph Implementation).
     
     Architecture:
-    1. Extraction: Simulated extraction of Medication and Dosage entities via regex.
-    2. Verification: Checks extracted dosage against the hard-coded Knowledge Graph limits.
+    1. Extraction: Uses 'd4data/biomedical-ner-all' to detect 'Medication' and 'Dosage' entities.
+    2. Linking: Associates a Medication with a Dosage based on physical proximity in text.
+    3. Verification: Checks the extracted dosage against a hard-coded Knowledge Graph limits.
     """
 
     def __init__(self):
-        logger.info("🛡️ Initializing Clinical Safety Layer (Rule-Based KG)...")
+        logger.info("🛡️ Initializing Clinical Safety Layer (NER-based)...")
         
-        # 1. Knowledge Graph (In-Memory Limits)
+        # 1. Knowledge Graph (In-Memory MVP)
+        # Defines safety limits for common medications.
         # Key: Normalized Drug Name (lowercase)
-        # Value: Safety constraints (limit in mg per day)
+        # Value: Safety constraints (limit in mg)
         self.drug_knowledge_graph = {
             "panadol": {"limit": 4000, "unit": "mg"},
             "paracetamol": {"limit": 4000, "unit": "mg"},
@@ -29,38 +30,63 @@ class ClinicalSafetyService:
             "metformin": {"limit": 2550, "unit": "mg"},
             "aspirin": {"limit": 4000, "unit": "mg"}
         }
-        
-        logger.info("✅ Safety rules loaded and ready (CPU-only).")
+
+        # 2. Load Medical NER Pipeline
+        # We use a BERT-based model fine-tuned for biomedical entities.
+        # 'aggregation_strategy="simple"' merges sub-tokens (e.g., "pan", "##adol") into one word.
+        try:
+            self.ner_pipeline = get_ner_pipeline()
+            logger.info("✅ Safety NER pipeline loaded.")
+        except Exception as e:
+            logger.exception(f"❌ Failed to load Safety NER: {e}")
+            self.ner_pipeline = None
 
     def _detect_rule_violations(self, summary_text: str) -> List[str]:
         """
-        Main entry point. Scans text for safety violations based on rules.
+        Main entry point. Scans text for safety violations.
         """
+        if not self.ner_pipeline:
+            return []
+
         warnings = []
         
-        # 1. Simulated Entity Extraction (using regex over NER model)
-        # We search for known drug names followed by dosage information (simulating NER linking).
+        # 1. Extract Entities using NER
+        # Returns list of dicts: [{'entity_group': 'Medication', 'word': 'Panadol', ...}]
+        entities = self.ner_pipeline(summary_text)
         
-        # Regex: Finds a known drug (group 1) followed by a quantity and unit (group 2: 500mg, 1g)
-        # Pattern example: "prescribe Ibuprofen 600mg every day"
-        for drug_name in self.drug_knowledge_graph.keys():
-            # Pattern: (Drug Name) (Optional Space) (Dosage String)
-            pattern = rf"\b({re.escape(drug_name)})\s*(\d+\s*(?:mg|g))\b"
+        # 2. Separate entities into Drugs and Dosages
+        drugs = []
+        dosages = []
+        
+        for ent in entities:
+            label = ent['entity_group']
             
-            # Find all potential drug-dosage pairs
-            for match in re.finditer(pattern, summary_text.lower()):
-                matched_drug = match.group(1).strip()
-                dosage_str = match.group(2).strip()
-                
-                kg_node = self.drug_knowledge_graph.get(matched_drug)
-                
-                # This should always be true if we iterated over the keys, but safe check
-                if not kg_node:
-                    continue 
+            # The model 'd4data/biomedical-ner-all' uses specific labels:
+            # 'Medication': Drug names
+            # 'Dosage': Strength or Amount (e.g., "500mg")
+            if label == "Medication":
+                drugs.append(ent)
+            elif label == "Dosage": 
+                dosages.append(ent)
 
-                # 2. Parse Dosage & Check Limit
+        # 3. Entity Linking (Proximity Heuristic)
+        # Iterate through found drugs and find the nearest dosage info.
+        for drug in drugs:
+            drug_name = drug['word'].lower().strip()
+            
+            # Check if this drug exists in our Knowledge Graph
+            kg_node = self.drug_knowledge_graph.get(drug_name)
+            if not kg_node:
+                continue # Skip unknown drugs (or flag as 'Unknown Drug' in future)
+
+            # Find the dosage entity closest to this drug in the text
+            best_dosage_ent = self._find_closest_dosage(drug, dosages)
+            
+            if best_dosage_ent:
+                # 4. Parse Dosage & Check Limit
                 try:
-                    amount, unit = self._parse_dosage_string(dosage_str)
+                    # Extract numeric value and unit
+                    amount, unit = self._parse_dosage_string(best_dosage_ent['word'])
                     
                     # Normalize unit (convert grams to milligrams)
                     if unit == 'g': 
@@ -68,15 +94,14 @@ class ClinicalSafetyService:
                     
                     limit = kg_node['limit']
                     
-                    # 3. Compare against Safety Limit
+                    # 5. Compare against Safety Limit
                     if amount > limit:
                         warnings.append(
-                            f"🚨 SAFETY ALERT: Potential overdose risk. {matched_drug.capitalize()} dosage ({amount}mg) "
+                            f"🚨 SAFETY ALERT: {drug['word']} dosage ({amount}mg) "
                             f"exceeds standard daily limit ({limit}mg)."
                         )
                 except ValueError:
-                    # Ignore unparseable dosage strings
-                    logger.debug(f"DEBUG: Could not parse dosage string '{dosage_str}' for {matched_drug}.")
+                    # Logic to handle cases where dosage string isn't parseable (e.g., "two tablets")
                     continue 
 
         return warnings
@@ -87,6 +112,33 @@ class ClinicalSafetyService:
         Offloads the synchronous rule detection logic to a thread to prevent blocking.
         """
         return await asyncio.to_thread(self._detect_rule_violations, summary_text)    
+
+    def _find_closest_dosage(self, drug_ent: Dict, dosage_list: List[Dict]) -> Optional[Dict]:
+        """
+        Finds the dosage entity physically closest to the drug entity in text
+        using character index positions.
+        """
+        if not dosage_list:
+            return None
+            
+        # Calculate center position of the drug entity
+        drug_pos = (drug_ent['start'] + drug_ent['end']) / 2
+        
+        closest_dosage = None
+        min_dist = float('inf')
+        
+        for dosage in dosage_list:
+            # Calculate center position of the dosage entity
+            dose_pos = (dosage['start'] + dosage['end']) / 2
+            dist = abs(drug_pos - dose_pos)
+            
+            # Heuristic: Dosage must be within 50 characters of the drug name
+            # to be considered related.
+            if dist < min_dist and dist < 50:
+                min_dist = dist
+                closest_dosage = dosage
+                
+        return closest_dosage
 
     def _parse_dosage_string(self, dosage_str: str) -> Tuple[int, str]:
         """
