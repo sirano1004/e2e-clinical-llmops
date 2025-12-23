@@ -8,9 +8,7 @@ from ..schemas import (
     DialogueTurn, 
     SegmentInfo
 )
-
 # Session TimeOUt
-from ..core.config import settings
 SESSION_TTL = settings.session_ttl
 
 class ConversationService:
@@ -121,8 +119,10 @@ class ConversationService:
         client = redis_client.get_instance()
         key = f"session:{session_id}:next_chunk"
         
-        await client.incr(key)
+        next_chunk_index = await client.incr(key)
         await client.expire(key, SESSION_TTL)
+
+        return next_chunk_index
     
     async def clear_session(self, session_id: str):
         """
