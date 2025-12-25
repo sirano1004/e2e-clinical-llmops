@@ -66,3 +66,5 @@ class SessionRepository:
             await client.delete(*keys_to_delete)
             # Optional: Log strictly for debugging
             # print(f"🧹 Cleared session {session_id}. Deleted keys: {keys_to_delete}")
+
+session_service = SessionRepository()
