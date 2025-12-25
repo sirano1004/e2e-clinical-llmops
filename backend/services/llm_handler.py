@@ -209,11 +209,16 @@ class LLMHandler:
 
         # 5. Execution
         # full_prompt passed from app.py already contains the Dialogue History
+        guided_decoding = (
+            GuidedDecodingParams(json=SOAPNoteGeneration.model_json_schema())
+            if request.task_type == "soap"
+            else None
+        )
         raw_response = await self._execute_prompt(
             messages=messages,
             temperature=request.temperature,
             lora_request_object=lora_request_object,
-            guided_decoding=GuidedDecodingParams(json=SOAPNoteGeneration.model_json_schema())
+            guided_decoding=guided_decoding
         )
         
         duration = (time.time() - start_time) * 1000

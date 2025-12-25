@@ -114,3 +114,19 @@ def submit_feedback(session_id: str, feedback_type: str, edited_content: str = "
             st.error(f"API Error ({resp.status_code}): {resp.text}")
     except Exception as e:
         st.error(f"Connection Error: {e}")
+
+def start_session_api(doctor_id: str, mrn: str):
+    api_base = get_api_base()
+    try:
+        payload = {
+            "doctor_id": doctor_id,
+            "mrn": mrn
+        }
+        resp = requests.post(f"{api_base}/start_session", data=payload)
+        resp.raise_for_status()
+        session_id = resp.json().get("session_id")        
+        return session_id
+        
+    except Exception as e:
+        st.error(f"Connection Error: {e}")
+        return None

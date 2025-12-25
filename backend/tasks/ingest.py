@@ -1,5 +1,6 @@
 import os
 import time
+import json
 from celery import Task
 from ..core.celery_app import celery_app
 # Exception Imports
@@ -18,6 +19,7 @@ from ..repositories.conversation import conversation_service
 from ..repositories.documents import document_service
 from ..repositories.metrics import metrics_service
 from ..repositories.notification import notification_service
+from ..repositories.buffer import buffer_service
 # Cores
 from ..core.logger import logger
 from ..core.decorators import async_worker_task
@@ -61,7 +63,16 @@ async def process_audio_chunk(self: Task, file_path: str, session_id: str, chunk
         if chunk_index > current_expected_index:
             logger.warning(f"✋ [Task] Wait! It is chunk {current_expected_index}'s turn. I am {chunk_index}. Retrying...")
             # Retry after 2 seconds. This pushes the task back to the queue.
-            raise self.retry(countdown=2)
+            logger.info(f"🅿️ [Buffer] Chunk {chunk_index} stored. Waiting for {current_expected_index}.")
+            
+            payload = json.dumps({
+                "file_path": file_path, 
+                "session_id": session_id,
+                "chunk_index": chunk_index,
+                "is_last_chunk": is_last_chunk
+            })
+            await buffer_service.save_chunk(session_id, chunk_index, json.loads(payload))
+            return {"status": "buffered"} # 태스크 여기서 완전 종료!
 
         # Case 2: Duplicate/Old (Already processed)
         if chunk_index < current_expected_index:
@@ -178,12 +189,33 @@ async def process_audio_chunk(self: Task, file_path: str, session_id: str, chunk
             logger.info(f"🏁 Final Chunk Processed! Latency: {pipeline_duration:.2f}ms")    
             await metrics_service.update_metrics(session_id, pipeline_duration, 'final_e2e_latency_ms')
 
+        # 10. Clean up Temp File
+        try:
+            os.remove(file_path)
+        except FileNotFoundError:
+            pass  # Already cleaned up             
+
         # ------------------------------------------------------
         # Order Increment
         # ------------------------------------------------------
         # Increment the expected index so the next chunk can proceed
-        await conversation_service.increment_expected_chunk_index(session_id)
-        logger.info(f"✅ [Task] Ticket number incremented. Next expected: {chunk_index + 1}")
+        next_chunk_index = await conversation_service.increment_expected_chunk_index(session_id)
+        logger.info(f"✅ [Task] Ticket number incremented. Next expected: {next_chunk_index}")
+
+        # Check if there are buffered chunks waiting
+        next_chunk_payload = await buffer_service.get_chunk(session_id, next_chunk_index)
+        if next_chunk_payload:
+            logger.info(f"▶️ [Buffer] Found buffered chunk {next_chunk_index}. Re-queuing...")
+            await buffer_service.del_chunk(session_id, next_chunk_index)
+            celery_app.send_task(
+                "process_audio_chunk",
+                kwargs={
+                    "file_path": next_chunk_payload["file_path"],
+                    "session_id": next_chunk_payload["session_id"],
+                    "chunk_index": next_chunk_payload["chunk_index"],
+                    "is_last_chunk": next_chunk_payload["is_last_chunk"]
+                }
+            )
 
         return {
             "status": "success",

@@ -34,7 +34,7 @@ class LocalStorageClient:
         # Add metadata (Timestamp) for audit purposes
         # using .copy() to avoid modifying the original dict reference
         save_data = record.copy()
-        save_data["_created_at"] = datetime.now().isoformat()
+        save_data["_created_at"] = datetime.now().astimezone().isoformat()
         
         try:
             # Open in 'append' mode asynchronously
