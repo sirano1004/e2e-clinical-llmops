@@ -11,6 +11,7 @@ from ..prompts import get_system_prompt, get_suffix_prompt # 💡 Reconstruct Pr
 from ..repositories.conversation import conversation_service
 from ..repositories.documents import document_service
 from ..repositories.metrics import metrics_service
+from ..repositories.session import session_service
 
 class FeedbackService:
     """
@@ -69,6 +70,7 @@ class FeedbackService:
         # Fetch what the AI saw to generate this output
         history = await conversation_service.get_dialogue_history(session_id)
         prev_note = await document_service.get_soap_note(session_id)
+        session_metadata = await session_service.get_session_metadata(session_id)
         
         history_text = "\n".join([f"{t.role}: {t.content}" for t in history])
         prev_note_str = prev_note.model_dump_json(indent=2) if prev_note and task_type != 'soap' else "None"
@@ -81,7 +83,7 @@ class FeedbackService:
             "session_id": session_id,
             "model_id": settings.target_model,
             "task_type": task_type,
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": datetime.now().astimezone().isoformat(),
             "action": action, 
             "input_context": {
                 "system_prompt": sys_prompt,
@@ -91,7 +93,8 @@ class FeedbackService:
             },
             "metrics": metrics,
             "chosen": final_output,     # Ground Truth
-            "rejected": original_output # AI output (if edited)
+            "rejected": original_output, # AI output (if edited)
+            **session_metadata # Additional session info (doctor_id, patient_id, etc.)
         }
 
         # 6. Routing Logic (SFT vs DPO)
@@ -125,7 +128,8 @@ class FeedbackService:
         # 1. Retrieve all metrics from Redis
         # Now includes both NER counts and Feedback sums
         metrics = await metrics_service.get_metrics(session_id)
-        
+        session_metadata = await session_service.get_session_metadata(session_id)
+
         if not metrics:
             return 
             
@@ -170,7 +174,7 @@ class FeedbackService:
         # 3. Create Log Record
         log_record = {
             "session_id": session_id,
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": datetime.now().astimezone().isoformat(),
             "model_id": settings.target_model,
             "type": "session_summary", 
             "stats": {
@@ -183,7 +187,8 @@ class FeedbackService:
                 # Latency Metrics (System Quality)
                 "avg_chunk_latency": avg_chunk_latency,
                 "final_latency": final_latency
-            }
+            },
+            **session_metadata # Additional session info (doctor_id, patient_id, etc.)
         }
         
         # 4. Save to System Log

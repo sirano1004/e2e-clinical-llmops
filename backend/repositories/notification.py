@@ -106,7 +106,7 @@ class NotificationService:
         
         alert_data = {
             "chunk_index": chunk_index,
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": datetime.now().astimezone().isoformat(),
             "alerts": alerts
         }
         
