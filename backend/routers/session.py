@@ -1,4 +1,5 @@
 import asyncio
+import uuid
 from typing import Optional
 from fastapi import APIRouter, Form, HTTPException
 
@@ -10,6 +11,7 @@ from ..services.feedback_service import feedback_service
 from ..repositories.conversation import conversation_service
 from ..repositories.notification import notification_service
 from ..repositories.documents import document_service
+from ..repositories.session import session_service
 router = APIRouter()
 
 @router.get("/check_notifications")
@@ -69,10 +71,36 @@ async def stop_session(session_id: str = Form(...)):
         await feedback_service.save_session_metrics(session_id)
         
         # 2. (Optional) Clear Redis if you want immediate cleanup
-        # await conversation_service.clear_session(session_id)
+        await session_service.clear_session(session_id)
         
         return {"status": "session_stopped"}
         
     except Exception as e:
         logger.exception("❌ Error stopping session")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/start_session")
+async def start_session(
+        doctor_id: str = Form(...),
+        mrn: str = Form(...)
+):
+    """
+    Initializes a new consultation session.
+    - Creates a new session ID.
+    - Sets up initial Redis keys and TTLs.
+    """
+    session_id = str(uuid.uuid4())
+    logger.info(f"🚀 Starting new session {session_id} for Doctor {doctor_id}, MRN {mrn}")
+    
+    try:
+        # Initialize any required Redis structures here
+        await session_service.create_session(session_id, doctor_id, mrn)
+
+        return {
+            "status": "session_started",
+            "session_id": session_id
+        }
+        
+    except Exception as e:
+        logger.exception("❌ Error starting session")
         raise HTTPException(status_code=500, detail=str(e))
