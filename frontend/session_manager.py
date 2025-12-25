@@ -1,4 +1,3 @@
-import uuid
 import streamlit as st
 
 # --- Constants & Defaults ---
@@ -27,21 +26,13 @@ INITIAL_STATE = {
     "use_mock_backend": False,    # Default to False (Live Mode)
 }
 
-def get_session_id() -> str:
-    """Return the current session ID, generating one if needed."""
-    if "session_id" not in st.session_state:
-        st.session_state.session_id = str(uuid.uuid4())
-    return st.session_state.session_id
-
 def init_session_state():
     """
     Initialize the Streamlit session state. 
     Iterates through INITIAL_STATE to ensure all keys exist.
     """
-    # 1. Ensure Session ID exists
-    get_session_id()
 
-    # 2. Initialize all other keys from the master dictionary
+    # 1. Initialize all other keys from the master dictionary
     for key, default_value in INITIAL_STATE.items():
         if key not in st.session_state:
             st.session_state[key] = default_value
@@ -51,13 +42,14 @@ def reset_session():
     Hard reset: Generates a new Session ID and restores all state 
     variables to their default values defined in INITIAL_STATE.
     """
-    # 1. New Session ID
-    st.session_state.session_id = str(uuid.uuid4())
-    
-    # 2. Restore Defaults (Loop ensures we never miss a key)
+    # 1. Restore Defaults (Loop ensures we never miss a key)
     for key, default_value in INITIAL_STATE.items():
         st.session_state[key] = default_value
 
+    # 2. Clear Session ID
+    if "session_id" in st.session_state:
+        del st.session_state["session_id"]
+        
     # 3. Force UI refresh
     st.rerun()
 
