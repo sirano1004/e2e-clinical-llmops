@@ -7,7 +7,6 @@ from ..core.celery_app import celery_app
 from celery.exceptions import Retry
 from redis.exceptions import ConnectionError as RedisConnectionError, TimeoutError as RedisTimeoutError
 from requests.exceptions import RequestException
-from pydantic import ValidationError
 # Services
 from ..services.transcriber import transcriber_service
 from ..services.role_service import role_service
@@ -80,7 +79,7 @@ def process_audio_chunk(self: Task, file_path: str, session_id: str, chunk_index
                 "is_last_chunk": is_last_chunk
             })
             buffer_service.save_chunk(session_id, chunk_index, json.loads(payload))
-            return {"status": "buffered"} # 태스크 여기서 완전 종료!
+            return {"status": "buffered"}
 
         # Case 2: Duplicate/Old (Already processed)
         if chunk_index < current_expected_index:
