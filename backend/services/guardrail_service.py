@@ -52,7 +52,7 @@ class GuardrailService:
         # Metrics Service (Synchronous)
         self.metrics_service = MetricsServiceSync(redis_client)
 
-    async def check_hallucination(self, session_id: str, transcript: List[DialogueTurn], summary: Union[str, dict]) -> List[str]:
+    def check_hallucination(self, session_id: str, transcript: List[DialogueTurn], summary: Union[str, dict]) -> List[str]:
         """
         Public Method: Non-blocking wrapper.
         Offloads heavy calculation to a separate thread.
@@ -64,7 +64,6 @@ class GuardrailService:
         try:
             logger.info("🛡️ Starting Guardrail Analysis (Threaded)...")
             
-            # Use 'None' to use the default ThreadPoolExecutor
             analysis_result = self._run_analysis_sync(
                 transcript_text,
                 summary_text
@@ -246,5 +245,3 @@ class GuardrailService:
             final_result["warnings"].extend(nli_warnings)
 
         return final_result
-
-guardrail_service = GuardrailService(redis_client)

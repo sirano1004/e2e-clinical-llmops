@@ -1,6 +1,7 @@
 import os
 import time
 from celery import Task
+from typing import List
 # Exception Imports
 from celery.exceptions import Retry
 from redis.exceptions import ConnectionError as RedisConnectionError, TimeoutError as RedisTimeoutError
@@ -20,7 +21,8 @@ from ..repositories.metrics import MetricsServiceSync
 # Schemas
 from ..schemas import (
     ScribeRequest, 
-    SOAPNote
+    SOAPNote,
+    DialogueTurn
 )
 
 RETRYABLE_ERRORS = (
@@ -32,7 +34,7 @@ RETRYABLE_ERRORS = (
 )
 
 @celery_app.task(bind=True, max_retries=2, name="generate_document_task")
-def generate_document_task(self, session_id: str, task_type: str, history: list, current_soap: str):
+def generate_document_task(self, session_id: str, task_type: str, history: List[str], current_soap: str):
     """
     [GPU Task] Generate documents (Referral/Certificate)
     """
@@ -43,6 +45,12 @@ def generate_document_task(self, session_id: str, task_type: str, history: list,
         current_soap = SOAPNote.model_validate_json(current_soap)
     except (ValidationError, TypeError):
         current_soap = SOAPNote()
+
+    try:
+        history = [DialogueTurn.model_validate_json(item) for item in history]
+    except (ValidationError, TypeError):
+        history = []
+
     try:
         logger.info(f"📄 [Task] Generating {task_type} for session {session_id}")
         

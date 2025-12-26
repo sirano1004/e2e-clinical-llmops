@@ -27,8 +27,7 @@ async def ingest_audio_chunk(
     session_id: str = Form(...),
     file: UploadFile = File(...),
     is_last_chunk: bool = Form(False),
-    conversation_service: ConversationRepositoryAsync = Depends(get_conversation_service),
-    document_service: DocumentServiceAsync = Depends(get_document_service)
+    conversation_service: ConversationRepositoryAsync = Depends(get_conversation_service)
 ):
     """
     Receives an audio chunk (30s-1m), processes it, and updates the SOAP note.
@@ -50,16 +49,14 @@ async def ingest_audio_chunk(
         chunk_index = await conversation_service.get_next_chunk_index(session_id)
         logger.info(f"🎫 [Ingest] Assigned Ticket #{chunk_index} to Session {session_id}")
 
-        # 3. Celery Task
-        current_note = await document_service.get_soap_note(session_id)
+        # 3. Celery Task        
         celery_app.send_task(
             "process_audio_chunk", # task 이름 (worker @task 데코레이터의 name과 일치해야 함)
             kwargs={
                 "file_path": file_path,
                 "session_id": session_id,
                 "chunk_index": chunk_index,
-                "is_last_chunk": is_last_chunk,
-                "currnt_note": current_note.model_dump_json()
+                "is_last_chunk": is_last_chunk
             }
         )
 

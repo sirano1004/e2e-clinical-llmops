@@ -40,8 +40,8 @@ async def generate_derived_document(
             kwargs={
                 "session_id": session_id,
                 "task_type": task_type,
-                "history": history,
-                "current_soap": current_soap.model_dump_json()
+                "history": [item.model_dump_json() for item in history],
+                "current_soap": current_soap.model_dump_json() if current_soap else None
             }
         )
 

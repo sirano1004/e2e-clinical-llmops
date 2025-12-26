@@ -13,7 +13,7 @@ from ..services.transcriber import transcriber_service
 from ..services.role_service import role_service
 from ..services.llm_handler import llm_service
 from ..services.pii_handler import pii_service
-from ..services.guardrail_service import guardrail_service
+from ..services.guardrail_service import GuardrailService
 from ..services.safety import safety_service
 # Repositories
 from ..repositories.conversation import ConversationRepositorySync
@@ -33,7 +33,7 @@ from ..schemas import (
 )
 
 @celery_app.task(bind=True, max_retries=3, name="process_audio_chunk")
-def process_audio_chunk(self: Task, file_path: str, session_id: str, chunk_index: int, is_last_chunk: bool, current_note: str):
+def process_audio_chunk(self: Task, file_path: str, session_id: str, chunk_index: int, is_last_chunk: bool):
     """
     Core Logic:
     1. Check if it is the turn of this chunk (Ordering).
@@ -54,11 +54,7 @@ def process_audio_chunk(self: Task, file_path: str, session_id: str, chunk_index
     metrics_service = MetricsServiceSync(redis_client)
     notification_service = NotificationServiceSync(redis_client)
     buffer_service = BufferServiceSync(redis_client)
-    
-    try:
-        current_note = SOAPNote.model_validate_json(current_note)
-    except (ValidationError, TypeError):
-        current_note = SOAPNote()
+    guardrail_service = GuardrailService(redis_client)
 
     try:
         # ------------------------------------------------------
@@ -140,6 +136,7 @@ def process_audio_chunk(self: Task, file_path: str, session_id: str, chunk_index
         # Since this is an update, we fetch the CURRENT state to pass as context.
         # Inside update_soap_note, it will be backed up automatically before overwrite.
         
+        current_note = document_service.get_soap_note(session_id)
         
         scribe_request = ScribeRequest(
             session_id=session_id,

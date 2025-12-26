@@ -42,7 +42,7 @@ class DocumentServiceSync:
     """
 
     def __init__(self, redis_client):
-        self.redis_client = redis_client
+        self.redis_client = redis_client.get_instance()
 
     def update_soap_note(self, session_id: str, note: SOAPNote):
         """
@@ -52,7 +52,19 @@ class DocumentServiceSync:
 
         # Save as JSON string
         self.redis_client.set(key, note.model_dump_json(), ex=SESSION_TTL)
-    
+
+    def get_soap_note(self, session_id: str) -> Optional[SOAPNote]:
+        """
+        Retrieves the current SOAP note state. Returns None if empty.
+        """
+        key = get_soap_note_key(session_id)
+
+        data = self.redis_client.get(key)
+        
+        if data:
+            return SOAPNote.model_validate_json(data)
+        return None
+
     def save_text_draft(self, session_id: str, task_type: str, raw_text: str):
         """
         Saves a plain text draft (e.g., Referral, Certificate) temporarily.
