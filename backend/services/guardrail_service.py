@@ -6,9 +6,10 @@ from typing import List, Set, Union, Dict, Any
 # --- Project Imports ---
 from ..schemas import DialogueTurn
 from ..core.logger import logger
+from ..core.redis_client_sync import redis_client
 from ..core.load_models import get_ner_pipeline, get_nli_pipeline
 # Repositories
-from ..repositories.metrics import metrics_service
+from ..repositories.metrics import MetricsServiceSync
 
 class GuardrailService:
     """
@@ -21,7 +22,7 @@ class GuardrailService:
     than embeddings, and open-source medical cross-encoders are rare.
     """
 
-    def __init__(self):
+    def __init__(self, redis_client):
         logger.info("🛡️ Initializing Guardrail Services (HF Models)...")
         
         # 1. Load Medical NER Pipeline (Hugging Face)
@@ -48,6 +49,9 @@ class GuardrailService:
             logger.exception(f"❌ Failed to load NLI model: {e}")
             self.nli_model = None
 
+        # Metrics Service (Synchronous)
+        self.metrics_service = MetricsServiceSync(redis_client.get_instance())
+
     async def check_hallucination(self, session_id: str, transcript: List[DialogueTurn], summary: Union[str, dict]) -> List[str]:
         """
         Public Method: Non-blocking wrapper.
@@ -61,12 +65,11 @@ class GuardrailService:
             logger.info("🛡️ Starting Guardrail Analysis (Threaded)...")
             
             # Use 'None' to use the default ThreadPoolExecutor
-            analysis_result = await asyncio.to_thread(
-                self._run_analysis_sync,
+            analysis_result = self._run_analysis_sync(
                 transcript_text,
                 summary_text
             )
-            
+
             # Log summary of results
             w_count = len(analysis_result["warnings"])
             if w_count > 0:
@@ -76,7 +79,7 @@ class GuardrailService:
             
             # Save metrics to redis
             if analysis_result['metrics']:
-                await metrics_service.update_metrics(session_id, analysis_result['metrics'])
+                self.metrics_service.update_metrics(session_id, analysis_result['metrics'])
 
             return analysis_result['warnings']
 
@@ -244,4 +247,4 @@ class GuardrailService:
 
         return final_result
 
-guardrail_service = GuardrailService()
+guardrail_service = GuardrailService(redis_client)

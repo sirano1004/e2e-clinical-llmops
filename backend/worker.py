@@ -3,6 +3,8 @@ import os
 from celery.signals import worker_process_init, worker_ready
 from .core.logger import logger
 from .core.celery_app import celery_app
+from .core.async_runtime import start_background_loop
+from .core.redis_client_sync import redis_client
 
 # 1. Wrap services in try-except for Import (Fail Fast)
 # If errors occur during model loading (GPU OOM, missing keys), terminate worker immediately.
@@ -37,6 +39,8 @@ except Exception as e:
 @worker_process_init.connect
 def check_services_health(**kwargs):
     logger.info("🏥 [Worker] Performing Health Checks...")
+    start_background_loop()  # Ensure async runtime is started
+    redis_client.connect()  # Ensure Redis connection is established
 
     # Check that required services are not None
     required_services = {

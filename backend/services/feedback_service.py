@@ -6,18 +6,25 @@ from datetime import datetime
 from ..core.local_storage import local_storage
 from ..core.config import settings
 from ..core.logger import logger
+from ..core.redis_client import redis_client
 from ..prompts import get_system_prompt, get_suffix_prompt # 💡 Reconstruct Prompt
 # Repositories
-from ..repositories.conversation import conversation_service
-from ..repositories.documents import document_service
-from ..repositories.metrics import metrics_service
-from ..repositories.session import session_service
+from ..repositories.conversation import ConversationRepositoryAsync
+from ..repositories.documents import DocumentServiceAsync
+from ..repositories.metrics import MetricsServiceAsync
+from ..repositories.session import SessionRepositoryAsync
 
 class FeedbackService:
     """
     Manages collection of Human Feedback with Accept/Reject/Edit workflows.
     Includes explicit stat updates for every action type.
     """
+    def __init__(self, redis_client):
+        r = redis_client.get_instance()
+        self.conversation_service = ConversationRepositoryAsync(r)
+        self.document_service = DocumentServiceAsync(r)
+        self.metrics_service = MetricsServiceAsync(r)
+        self.session_service = SessionRepositoryAsync(r)
 
     async def save_feedback(
         self, 
@@ -53,7 +60,7 @@ class FeedbackService:
         # 2. ⚡️ Update Session Stats in Redis (CRITICAL)
         # We MUST update stats even for 'reject' to track the Failure Rate.
         # similarity/distance are passed as None for 'accept'/'reject' based on discussion.
-        await metrics_service.update_feedback_stats(
+        await self.metrics_service.update_feedback_stats(
             session_id=session_id,
             similarity=similarity,
             distance=distance,
@@ -68,10 +75,10 @@ class FeedbackService:
 
         # 4. Prepare Context for Training Data (Input)
         # Fetch what the AI saw to generate this output
-        history = await conversation_service.get_dialogue_history(session_id)
-        prev_note = await document_service.get_soap_note(session_id)
-        session_metadata = await session_service.get_session_metadata(session_id)
-        
+        history = await self.conversation_service.get_dialogue_history(session_id)
+        prev_note = await self.document_service.get_soap_note(session_id)
+        session_metadata = await self.session_service.get_session_metadata(session_id)
+
         history_text = "\n".join([f"{t.role}: {t.content}" for t in history])
         prev_note_str = prev_note.model_dump_json(indent=2) if prev_note and task_type != 'soap' else "None"
         
@@ -127,8 +134,8 @@ class FeedbackService:
         """
         # 1. Retrieve all metrics from Redis
         # Now includes both NER counts and Feedback sums
-        metrics = await metrics_service.get_metrics(session_id)
-        session_metadata = await session_service.get_session_metadata(session_id)
+        metrics = await self.metrics_service.get_metrics(session_id)
+        session_metadata = await self.session_service.get_session_metadata(session_id)
 
         if not metrics:
             return 
@@ -163,7 +170,7 @@ class FeedbackService:
             }
 
         # --- C. Latency Metrics ---
-        total_chunks = await conversation_service.get_next_chunk_index(session_id) - 1
+        total_chunks = await self.conversation_service.get_next_chunk_index(session_id) - 1
         if total_chunks > 0:
             avg_chunk_latency = float(metrics.get("total_latency_ms") or 0.0) / total_chunks
             final_latency = float(metrics.get("final_e2e_latency_ms") or 0.0)
@@ -217,4 +224,4 @@ class FeedbackService:
         }
 
 # Singleton Instance
-feedback_service = FeedbackService()
+feedback_service = FeedbackService(redis_client)

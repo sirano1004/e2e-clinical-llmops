@@ -1,23 +1,37 @@
 import asyncio
 import uuid
 from typing import Optional
-from fastapi import APIRouter, Form, HTTPException
+from fastapi import APIRouter, Form, HTTPException, Depends
 
 # --- Project Imports ---
 from ..core.logger import logger
 # Services
 from ..services.feedback_service import feedback_service
 # Repositories
-from ..repositories.conversation import conversation_service
-from ..repositories.notification import notification_service
-from ..repositories.documents import document_service
-from ..repositories.session import session_service
+from ..core.redis_client import redis_client
+from ..repositories.conversation import ConversationRepositoryAsync
+from ..repositories.notification import NotificationServiceAsync
+from ..repositories.documents import DocumentServiceAsync
+from ..repositories.session import SessionRepositoryAsync
 router = APIRouter()
+
+def get_document_service() -> DocumentServiceAsync:
+    return DocumentServiceAsync(redis_client.get_instance())
+
+def get_session_service() -> SessionRepositoryAsync:
+    return SessionRepositoryAsync(redis_client.get_instance())
+
+def get_conversation_service() -> ConversationRepositoryAsync:
+    return ConversationRepositoryAsync(redis_client.get_instance())
+
+def get_notification_service() -> NotificationServiceAsync:
+    return NotificationServiceAsync(redis_client.get_instance())
 
 @router.get("/check_notifications")
 async def check_notifications(
     session_id: str, 
-    chunk_index: Optional[int] = None # Frontend sends this to get specific alerts
+    chunk_index: Optional[int] = None, # Frontend sends this to get specific alerts
+    notification_service: NotificationServiceAsync = Depends(get_notification_service)
 ):
     """
     Frontend calls this to poll for warnings.
@@ -44,21 +58,24 @@ async def check_notifications(
     return response
 
 @router.get("/get_transcript")
-async def get_transcript(session_id: str):
+async def get_transcript(session_id: str, conversation_service: ConversationRepositoryAsync = Depends(get_conversation_service)):
     """
     poll for transcribed conversation
     """
     return await conversation_service.get_ui_segments(session_id)
 
 @router.get("/get_soap_note")
-async def get_soap_note(session_id: str):
+async def get_soap_note(
+    session_id: str,
+    document_service: DocumentServiceAsync = Depends(get_document_service)
+    ):
     """
     poll for current SOAP note state
     """
     return await document_service.get_soap_note(session_id)
 
 @router.post("/stop_session")
-async def stop_session(session_id: str = Form(...)):
+async def stop_session(session_id: str = Form(...), session_service: SessionRepositoryAsync = Depends(get_session_service)):
     """
     Ends the consultation.
     - Flushes metrics to long-term storage.
@@ -82,7 +99,8 @@ async def stop_session(session_id: str = Form(...)):
 @router.post("/start_session")
 async def start_session(
         doctor_id: str = Form(...),
-        mrn: str = Form(...)
+        mrn: str = Form(...),
+        session_service: SessionRepositoryAsync = Depends(get_session_service)
 ):
     """
     Initializes a new consultation session.

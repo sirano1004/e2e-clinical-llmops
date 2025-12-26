@@ -1,6 +1,5 @@
 import redis.asyncio as redis
 from typing import Optional
-import sys
 
 # --- Project Imports ---
 from .config import settings
