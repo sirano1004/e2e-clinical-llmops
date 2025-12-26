@@ -3,7 +3,6 @@ from datetime import datetime
 from typing import List, Optional, Dict, Any
 
 # --- Project Imports ---
-from ..core.redis_client import redis_client
 from ..core.config import settings
 import hashlib
 
@@ -14,15 +13,21 @@ def hash_mrn(mrn: str) -> str:
     """Hash MRN using SHA-256 for secure storage."""
     return hashlib.sha256(mrn.encode()).hexdigest()[:32]
 
-class SessionRepository:
+get_metadata_key = lambda session_id: f"session:{session_id}:metadata"
+
+class SessionRepositoryAsync:
+    """
+    Manages session creation, metadata retrieval, and deletion using Redis.
+    """
+    def __init__(self, redis_client):
+        self.redis_client = redis_client.get_instance()
 
     async def create_session(self, session_id: str, doctor_id: str, mrn: str) -> str:
         """
         Creates a new session and stores its metadata in Redis.
         Returns the generated session ID.
         """
-        client = redis_client.get_instance()
-        key = f"session:{session_id}:metadata"
+        key = get_metadata_key(session_id)
 
         metadata = {
             "doctor_id": doctor_id,
@@ -30,8 +35,8 @@ class SessionRepository:
             "session_start": datetime.now().astimezone().isoformat()
         }
 
-        await client.hset(key, mapping=metadata)
-        await client.expire(key, SESSION_TTL)
+        await self.redis_client.hset(key, mapping=metadata)
+        await self.redis_client.expire(key, SESSION_TTL)
 
         return session_id
 
@@ -40,10 +45,9 @@ class SessionRepository:
         Retrieves session metadata from Redis.
         Returns None if session does not exist.
         """
-        client = redis_client.get_instance()
-        key = f"session:{session_id}:metadata"
+        key = get_metadata_key(session_id)
 
-        raw_metadata = await client.hgetall(key)
+        raw_metadata = await self.redis_client.hgetall(key)
         if not raw_metadata:
             return None
 
@@ -54,17 +58,14 @@ class SessionRepository:
         Completely wipes ALL data related to a session.
         Uses SCAN to find all keys matching 'session:{id}:*' instead of a hardcoded list.
         """
-        client = redis_client.get_instance()
         pattern = f"session:{session_id}:*"
         
         # 1. Find all keys belonging to this session
         # scan_iter is non-blocking and efficient for finding matching keys
-        keys_to_delete = [key async for key in client.scan_iter(match=pattern)]
+        keys_to_delete = [key async for key in self.redis_client.scan_iter(match=pattern)]
         
         # 2. Delete them all in one go
         if keys_to_delete:
-            await client.delete(*keys_to_delete)
+            await self.redis_client.delete(*keys_to_delete)
             # Optional: Log strictly for debugging
             # print(f"🧹 Cleared session {session_id}. Deleted keys: {keys_to_delete}")
-
-session_service = SessionRepository()

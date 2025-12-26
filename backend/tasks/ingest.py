@@ -7,22 +7,24 @@ from ..core.celery_app import celery_app
 from celery.exceptions import Retry
 from redis.exceptions import ConnectionError as RedisConnectionError, TimeoutError as RedisTimeoutError
 from requests.exceptions import RequestException
+from pydantic import ValidationError
 # Services
 from ..services.transcriber import transcriber_service
 from ..services.role_service import role_service
 from ..services.llm_handler import llm_service
 from ..services.pii_handler import pii_service
-from ..services.guardrail_service import guardrail_service
+from ..services.guardrail_service import GuardrailService
 from ..services.safety import safety_service
 # Repositories
-from ..repositories.conversation import conversation_service
-from ..repositories.documents import document_service
-from ..repositories.metrics import metrics_service
-from ..repositories.notification import notification_service
-from ..repositories.buffer import buffer_service
+from ..repositories.conversation import ConversationRepositorySync
+from ..repositories.documents import DocumentServiceSync
+from ..repositories.metrics import MetricsServiceSync
+from ..repositories.notification import NotificationServiceSync
+from ..repositories.buffer import BufferServiceSync
 # Cores
+from ..core.redis_client_sync import redis_client
 from ..core.logger import logger
-from ..core.decorators import async_worker_task
+from ..core.async_runtime import run_async
 # Schemas
 from ..schemas import (
     ScribeRequest, 
@@ -31,8 +33,7 @@ from ..schemas import (
 )
 
 @celery_app.task(bind=True, max_retries=3, name="process_audio_chunk")
-@async_worker_task
-async def process_audio_chunk(self: Task, file_path: str, session_id: str, chunk_index: int, is_last_chunk: bool):
+def process_audio_chunk(self: Task, file_path: str, session_id: str, chunk_index: int, is_last_chunk: bool):
     """
     Core Logic:
     1. Check if it is the turn of this chunk (Ordering).
@@ -48,12 +49,19 @@ async def process_audio_chunk(self: Task, file_path: str, session_id: str, chunk
         TimeoutError
     )
 
+    conversation_service = ConversationRepositorySync(redis_client)
+    document_service = DocumentServiceSync(redis_client)
+    metrics_service = MetricsServiceSync(redis_client)
+    notification_service = NotificationServiceSync(redis_client)
+    buffer_service = BufferServiceSync(redis_client)
+    guardrail_service = GuardrailService(redis_client)
+
     try:
         # ------------------------------------------------------
         # Ordering Logic (The "Ticket Number" System)
         # ------------------------------------------------------
         # Fetch the current ticket number (default to 0)
-        current_expected_index = await conversation_service.get_expected_chunk_index(session_id)
+        current_expected_index = conversation_service.get_expected_chunk_index(session_id)
         # Measure how long the entire pipeline takes
         pipeline_start = time.time()
 
@@ -71,7 +79,7 @@ async def process_audio_chunk(self: Task, file_path: str, session_id: str, chunk
                 "chunk_index": chunk_index,
                 "is_last_chunk": is_last_chunk
             })
-            await buffer_service.save_chunk(session_id, chunk_index, json.loads(payload))
+            buffer_service.save_chunk(session_id, chunk_index, json.loads(payload))
             return {"status": "buffered"} # 태스크 여기서 완전 종료!
 
         # Case 2: Duplicate/Old (Already processed)
@@ -86,7 +94,7 @@ async def process_audio_chunk(self: Task, file_path: str, session_id: str, chunk
             
         # 1. Run Whisper (ASR)
         # Returns raw text with timestamps and assigns chunk_index to turns
-        transcribe_result = await transcriber_service.transcribe_audio(
+        transcribe_result = transcriber_service._transcribe_audio(
             file_path, 
             chunk_index=chunk_index
         )
@@ -97,13 +105,13 @@ async def process_audio_chunk(self: Task, file_path: str, session_id: str, chunk
             return ScribeResponse(
                 session_id=session_id,
                 interaction_id="empty",
-                generated_summary=await document_service.get_soap_note(session_id) or SOAPNote(),
+                generated_summary=current_note or SOAPNote(),
                 chunk_index=chunk_index
             )
 
         # 2. Role Assignment (Tagging)
         # Uses LLM to tag 'Doctor' or 'Patient' based on context
-        tagged_turns = await role_service.assign_roles(raw_turns)
+        tagged_turns = run_async(role_service.assign_roles(raw_turns))
         
         if "raw_segments" in transcribe_result:
             for i, turn in enumerate(tagged_turns):
@@ -113,21 +121,22 @@ async def process_audio_chunk(self: Task, file_path: str, session_id: str, chunk
 
         # 3. PII Masking
         # Mask sensitive data before storage or LLM processing
-        safe_turns = await pii_service.mask_dialogue(tagged_turns)
+        safe_turns = pii_service._mask_dialogue(tagged_turns)
         
         # 6. Save to History (Redis)
         # Persist the dialogue state
-        await conversation_service.add_ui_segments(session_id, transcribe_result["raw_segments"])
-        await conversation_service.add_dialogue_turns(session_id, safe_turns)
+        conversation_service.add_ui_segments(session_id, transcribe_result["raw_segments"])
+        conversation_service.add_dialogue_turns(session_id, safe_turns)
 
         # 7. Run vLLM (Summary/Extraction)
-        full_history = await conversation_service.get_dialogue_history(session_id)
+        full_history = conversation_service.get_dialogue_history(session_id)
         
         # We use get_backup_soap_note inside llm_handler logic via ScribeRequest?
         # Actually, llm_handler expects us to pass the 'existing_notes'.
         # Since this is an update, we fetch the CURRENT state to pass as context.
         # Inside update_soap_note, it will be backed up automatically before overwrite.
-        current_note = await document_service.get_soap_note(session_id)
+        
+        current_note = document_service.get_soap_note(session_id)
         
         scribe_request = ScribeRequest(
             session_id=session_id,
@@ -139,7 +148,7 @@ async def process_audio_chunk(self: Task, file_path: str, session_id: str, chunk
         
         # 8. Generate Update (LLM)
         # Returns a SOAPNote containing only NEW/UPDATED items (Delta)
-        response = await llm_service.generate_scribe(scribe_request)
+        response = run_async(llm_service.generate_scribe(scribe_request))
         delta_note = response.generated_summary
         
         # 9. Merge & Update State
@@ -154,7 +163,7 @@ async def process_audio_chunk(self: Task, file_path: str, session_id: str, chunk
                 new_state.merge(delta_note)
             
             # Commit to Redis (This triggers Backup logic internally)
-            await document_service.update_soap_note(session_id, new_state)
+            document_service.update_soap_note(session_id, new_state)
             
             # Update response with the FULL merged note for UI display
             response.generated_summary = new_state
@@ -162,10 +171,10 @@ async def process_audio_chunk(self: Task, file_path: str, session_id: str, chunk
         # 8. Run Safety Checks
         delta_dict = delta_note.model_dump() if isinstance(delta_note, SOAPNote) else {}
 
-        warnings = await guardrail_service.check_hallucination(session_id, safe_turns, delta_dict)
+        warnings = guardrail_service.check_hallucination(session_id, safe_turns, delta_dict)
 
         if warnings:        
-            await notification_service.add_warning(session_id, warnings, chunk_index)
+            notification_service.add_warning(session_id, warnings, chunk_index)
             logger.warning(f"⚠️ [Background] Chunk {chunk_index} Guardrail Warnings: {warnings}")
 
         # Dict -> String (Safety Service accepts text only)
@@ -176,10 +185,10 @@ async def process_audio_chunk(self: Task, file_path: str, session_id: str, chunk
         else:
             summary_text = str(delta_dict)
 
-        alerts = await safety_service.check_safety(summary_text)
+        alerts = safety_service._detect_rule_violations(summary_text)
         
         if alerts:
-            await notification_service.add_safety_alert(session_id, alerts, chunk_index)
+            notification_service.add_safety_alert(session_id, alerts, chunk_index)
             logger.warning(f"⚠️ [Background] Chunk {chunk_index} Safety Alert: {alerts}")
 
         # 9. end of pipeline
@@ -187,7 +196,7 @@ async def process_audio_chunk(self: Task, file_path: str, session_id: str, chunk
         
         if is_last_chunk:
             logger.info(f"🏁 Final Chunk Processed! Latency: {pipeline_duration:.2f}ms")    
-            await metrics_service.update_metrics(session_id, pipeline_duration, 'final_e2e_latency_ms')
+            metrics_service.update_metrics(session_id, pipeline_duration, 'final_e2e_latency_ms')
 
         # 10. Clean up Temp File
         try:
@@ -199,14 +208,14 @@ async def process_audio_chunk(self: Task, file_path: str, session_id: str, chunk
         # Order Increment
         # ------------------------------------------------------
         # Increment the expected index so the next chunk can proceed
-        next_chunk_index = await conversation_service.increment_expected_chunk_index(session_id)
+        next_chunk_index = conversation_service.increment_expected_chunk_index(session_id)
         logger.info(f"✅ [Task] Ticket number incremented. Next expected: {next_chunk_index}")
 
         # Check if there are buffered chunks waiting
-        next_chunk_payload = await buffer_service.get_chunk(session_id, next_chunk_index)
+        next_chunk_payload = buffer_service.get_chunk(session_id, next_chunk_index)
         if next_chunk_payload:
             logger.info(f"▶️ [Buffer] Found buffered chunk {next_chunk_index}. Re-queuing...")
-            await buffer_service.del_chunk(session_id, next_chunk_index)
+            buffer_service.del_chunk(session_id, next_chunk_index)
             celery_app.send_task(
                 "process_audio_chunk",
                 kwargs={
@@ -248,9 +257,9 @@ async def process_audio_chunk(self: Task, file_path: str, session_id: str, chunk
         # Case 2: When all retries are exhausted (Max Retries Reached)
         # ------------------------------------------------------
         logger.error(f"💀 [Task] Max retries reached for Chunk {chunk_index}. Giving up.")
-        
+
         # 1. Unblock the pipeline (call the next ticket number)
-        await conversation_service.increment_expected_chunk_index(session_id)
+        conversation_service.increment_expected_chunk_index(session_id)
         
         # 2. Clean up the file (now it's really over, so it's okay to delete)
         try:

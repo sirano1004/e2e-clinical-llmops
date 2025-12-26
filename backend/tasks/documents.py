@@ -1,23 +1,28 @@
 import os
 import time
 from celery import Task
+from typing import List
 # Exception Imports
 from celery.exceptions import Retry
 from redis.exceptions import ConnectionError as RedisConnectionError, TimeoutError as RedisTimeoutError
 from requests.exceptions import RequestException
+from pydantic import ValidationError
 # --- Project Imports ---
 from ..core.celery_app import celery_app
 from ..core.decorators import async_worker_task
 from ..core.logger import logger
+from ..core.redis_client_sync import redis_client
+from ..core.async_runtime import run_async
 # Services
 from ..services.llm_handler import llm_service
 # Repositories
-from ..repositories.conversation import conversation_service
-from ..repositories.documents import document_service
+from ..repositories.documents import DocumentServiceSync
+from ..repositories.metrics import MetricsServiceSync
 # Schemas
 from ..schemas import (
     ScribeRequest, 
-    ScribeResponse
+    SOAPNote,
+    DialogueTurn
 )
 
 RETRYABLE_ERRORS = (
@@ -29,23 +34,30 @@ RETRYABLE_ERRORS = (
 )
 
 @celery_app.task(bind=True, max_retries=2, name="generate_document_task")
-@async_worker_task
-async def generate_document_task(self, session_id: str, task_type: str):
+def generate_document_task(self, session_id: str, task_type: str, history: List[str], current_soap: str):
     """
     [GPU Task] Generate documents (Referral/Certificate)
     """
+    metrics_service = MetricsServiceSync(redis_client)
+    document_service = DocumentServiceSync(redis_client)
+
+    try:
+        current_soap = SOAPNote.model_validate_json(current_soap)
+    except (ValidationError, TypeError):
+        current_soap = SOAPNote()
+
+    try:
+        history = [DialogueTurn.model_validate_json(item) for item in history]
+    except (ValidationError, TypeError):
+        history = []
 
     try:
         logger.info(f"📄 [Task] Generating {task_type} for session {session_id}")
         
-        # 1. Fetch Data
-        history = await conversation_service.get_dialogue_history(session_id)
-        current_soap = await document_service.get_soap_note(session_id)
-        
         if not current_soap:
             return {"status": "failed", "error": "No SOAP note found"}
             
-        # 2. Prepare Request
+        # 1. Prepare Request
         request = ScribeRequest(
             session_id=session_id,
             dialogue_history=history,
@@ -53,12 +65,15 @@ async def generate_document_task(self, session_id: str, task_type: str):
             task_type=task_type
         )
         
-        # 3. GPU Inference
-        response = await llm_service.generate_scribe(request)
+        # 2. GPU Inference
+        response = run_async(llm_service.generate_scribe(request))
         
+        # 3. Save Duration Metric
+        metrics_service.update_metrics(request.session_id, response.duration, 'total_latency_ms')
+
         # 4. Save Draft
         if isinstance(response.generated_summary, str):
-            await document_service.save_text_draft(
+            document_service.save_text_draft(
                 request.session_id, 
                 request.task_type, 
                 response.generated_summary
