@@ -1,23 +1,32 @@
 import json
 from typing import Optional
-from fastapi import APIRouter, Form, HTTPException
+from fastapi import APIRouter, Form, HTTPException, Depends
 
 # --- Project Imports ---
 from ..core.logger import logger
 # Services
-from ..services.feedback_service import feedback_service
+from ..services.feedback_service import FeedbackService
 # Schemas
 from ..schemas import SOAPNote
 # Repositories
-from ..repositories.documents import document_service
+from ..core.redis_client import redis_client
+from ..repositories.documents import DocumentServiceAsync
 
 router = APIRouter()
+
+def get_document_service() -> DocumentServiceAsync:
+    return DocumentServiceAsync(redis_client)
+
+def get_feedback_service() -> FeedbackService:
+    return FeedbackService(redis_client)
 
 @router.post("/submit_feedback")
 async def submit_human_feedback(
     session_id: str = Form(...),
     feedback_type: str = Form(...), # accept, reject, edit
     edited_content: str = Form(None), # JSON string or plain text
+    document_service: DocumentServiceAsync = Depends(get_document_service),
+    feedback_service: FeedbackService = Depends(get_feedback_service)
 ):
     """
     Captures doctor's feedback for SFT/DPO data collection.

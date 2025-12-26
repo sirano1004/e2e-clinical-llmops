@@ -85,6 +85,7 @@ class ScribeResponse(BaseModel):
 
     # Metadata
     created_at: datetime = Field(default_factory=datetime.now)
+    duration: float = Field(0.0, description="Time taken (ms) for generation")
 
 # --- 4. Feedback (Training Data) ---
 class FeedbackRequest(BaseModel):

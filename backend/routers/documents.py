@@ -1,16 +1,25 @@
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, status, Depends
 from celery.result import AsyncResult
 # --- Project Imports ---
 from ..core.celery_app import celery_app
 from ..core.logger import logger
-
+from ..core.redis_client import redis_client
+from ..repositories.conversation import ConversationRepositoryAsync
+from ..repositories.documents import DocumentServiceAsync
 
 router = APIRouter()
+
+def get_document_service() -> DocumentServiceAsync:
+    return DocumentServiceAsync(redis_client)
+def get_conversation_service() -> ConversationRepositoryAsync:
+    return ConversationRepositoryAsync(redis_client)
 
 @router.post("/generate_document", status_code=status.HTTP_202_ACCEPTED)
 async def generate_derived_document(
     session_id: str,
-    task_type: str
+    task_type: str,
+    conversation_service: ConversationRepositoryAsync = Depends(get_conversation_service),
+    document_service: DocumentServiceAsync = Depends(get_document_service)
 ):
     """
     Generates derived documents (Referral, Certificate) based on the FINAL SOAP note.
@@ -21,11 +30,18 @@ async def generate_derived_document(
     try:
         # Update Request Context
 
+        # 1. Fetch Data
+        history = await conversation_service.get_dialogue_history(session_id)
+        current_soap = await document_service.get_soap_note(session_id)
+
+        # 2. Celery Task
         task = celery_app.send_task(
             "generate_document_task", # task 이름 (worker @task 데코레이터의 name과 일치해야 함)
             kwargs={
                 "session_id": session_id,
                 "task_type": task_type,
+                "history": [item.model_dump_json() for item in history],
+                "current_soap": current_soap.model_dump_json() if current_soap else None
             }
         )
 
@@ -61,7 +77,7 @@ async def get_task_status(task_id: str):
                  "status": "failed",
                  "error": output.get("error", "Unknown logic error")
              }
-             
+        
         # True success
         return {
             "status": "completed",
