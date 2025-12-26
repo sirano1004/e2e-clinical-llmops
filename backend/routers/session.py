@@ -6,7 +6,7 @@ from fastapi import APIRouter, Form, HTTPException, Depends
 # --- Project Imports ---
 from ..core.logger import logger
 # Services
-from ..services.feedback_service import feedback_service
+from ..services.feedback_service import FeedbackService
 # Repositories
 from ..core.redis_client import redis_client
 from ..repositories.conversation import ConversationRepositoryAsync
@@ -16,16 +16,19 @@ from ..repositories.session import SessionRepositoryAsync
 router = APIRouter()
 
 def get_document_service() -> DocumentServiceAsync:
-    return DocumentServiceAsync(redis_client.get_instance())
+    return DocumentServiceAsync(redis_client)
 
 def get_session_service() -> SessionRepositoryAsync:
-    return SessionRepositoryAsync(redis_client.get_instance())
+    return SessionRepositoryAsync(redis_client)
 
 def get_conversation_service() -> ConversationRepositoryAsync:
-    return ConversationRepositoryAsync(redis_client.get_instance())
+    return ConversationRepositoryAsync(redis_client)
 
 def get_notification_service() -> NotificationServiceAsync:
-    return NotificationServiceAsync(redis_client.get_instance())
+    return NotificationServiceAsync(redis_client)
+
+def get_feedback_service() -> FeedbackService:
+    return FeedbackService(redis_client)
 
 @router.get("/check_notifications")
 async def check_notifications(
@@ -75,7 +78,11 @@ async def get_soap_note(
     return await document_service.get_soap_note(session_id)
 
 @router.post("/stop_session")
-async def stop_session(session_id: str = Form(...), session_service: SessionRepositoryAsync = Depends(get_session_service)):
+async def stop_session(
+    session_id: str = Form(...), 
+    session_service: SessionRepositoryAsync = Depends(get_session_service),
+    feedback_service: FeedbackService = Depends(get_feedback_service)
+):
     """
     Ends the consultation.
     - Flushes metrics to long-term storage.

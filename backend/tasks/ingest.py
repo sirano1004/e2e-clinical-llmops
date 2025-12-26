@@ -49,14 +49,12 @@ def process_audio_chunk(self: Task, file_path: str, session_id: str, chunk_index
         TimeoutError
     )
 
-    r = redis_client.get_instance()
-
-    conversation_service = ConversationRepositorySync(r)
-    document_service = DocumentServiceSync(r)
-    metrics_service = MetricsServiceSync(r)
-    notification_service = NotificationServiceSync(r)
-    buffer_service = BufferServiceSync(r)
-
+    conversation_service = ConversationRepositorySync(redis_client)
+    document_service = DocumentServiceSync(redis_client)
+    metrics_service = MetricsServiceSync(redis_client)
+    notification_service = NotificationServiceSync(redis_client)
+    buffer_service = BufferServiceSync(redis_client)
+    
     try:
         current_note = SOAPNote.model_validate_json(current_note)
     except (ValidationError, TypeError):

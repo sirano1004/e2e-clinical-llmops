@@ -15,8 +15,8 @@ from ..core.async_runtime import run_async
 # Services
 from ..services.llm_handler import llm_service
 # Repositories
-from ..repositories.documents import DocumentServiceSync, document_service
-from ..repositories.metrics import MetricsServiceSync, metrics_service
+from ..repositories.documents import DocumentServiceSync
+from ..repositories.metrics import MetricsServiceSync
 # Schemas
 from ..schemas import (
     ScribeRequest, 
@@ -36,9 +36,8 @@ def generate_document_task(self, session_id: str, task_type: str, history: list,
     """
     [GPU Task] Generate documents (Referral/Certificate)
     """
-    r = redis_client.get_instance()
-    metrics_service = MetricsServiceSync(r)
-    document_service = DocumentServiceSync(r)
+    metrics_service = MetricsServiceSync(redis_client)
+    document_service = DocumentServiceSync(redis_client)
 
     try:
         current_soap = SOAPNote.model_validate_json(current_soap)

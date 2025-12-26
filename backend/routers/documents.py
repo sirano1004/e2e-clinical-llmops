@@ -10,9 +10,9 @@ from ..repositories.documents import DocumentServiceAsync
 router = APIRouter()
 
 def get_document_service() -> DocumentServiceAsync:
-    return DocumentServiceAsync(redis_client.get_instance())
+    return DocumentServiceAsync(redis_client)
 def get_conversation_service() -> ConversationRepositoryAsync:
-    return ConversationRepositoryAsync(redis_client.get_instance())
+    return ConversationRepositoryAsync(redis_client)
 
 @router.post("/generate_document", status_code=status.HTTP_202_ACCEPTED)
 async def generate_derived_document(

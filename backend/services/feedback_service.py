@@ -6,7 +6,6 @@ from datetime import datetime
 from ..core.local_storage import local_storage
 from ..core.config import settings
 from ..core.logger import logger
-from ..core.redis_client import redis_client
 from ..prompts import get_system_prompt, get_suffix_prompt # 💡 Reconstruct Prompt
 # Repositories
 from ..repositories.conversation import ConversationRepositoryAsync
@@ -20,11 +19,10 @@ class FeedbackService:
     Includes explicit stat updates for every action type.
     """
     def __init__(self, redis_client):
-        r = redis_client.get_instance()
-        self.conversation_service = ConversationRepositoryAsync(r)
-        self.document_service = DocumentServiceAsync(r)
-        self.metrics_service = MetricsServiceAsync(r)
-        self.session_service = SessionRepositoryAsync(r)
+        self.conversation_service = ConversationRepositoryAsync(redis_client)
+        self.document_service = DocumentServiceAsync(redis_client)
+        self.metrics_service = MetricsServiceAsync(redis_client)
+        self.session_service = SessionRepositoryAsync(redis_client)
 
     async def save_feedback(
         self, 
@@ -222,6 +220,3 @@ class FeedbackService:
             "distance": dist,
             "similarity": round(similarity, 4)
         }
-
-# Singleton Instance
-feedback_service = FeedbackService(redis_client)

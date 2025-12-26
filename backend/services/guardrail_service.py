@@ -50,7 +50,7 @@ class GuardrailService:
             self.nli_model = None
 
         # Metrics Service (Synchronous)
-        self.metrics_service = MetricsServiceSync(redis_client.get_instance())
+        self.metrics_service = MetricsServiceSync(redis_client)
 
     async def check_hallucination(self, session_id: str, transcript: List[DialogueTurn], summary: Union[str, dict]) -> List[str]:
         """

@@ -17,10 +17,10 @@ UPLOAD_DIR = "temp_audio_uploads"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 def get_conversation_service() -> ConversationRepositoryAsync:
-    return ConversationRepositoryAsync(redis_client.get_instance())
+    return ConversationRepositoryAsync(redis_client)
 
 def get_document_service() -> DocumentServiceAsync:
-    return DocumentServiceAsync(redis_client.get_instance())
+    return DocumentServiceAsync(redis_client)
 
 @router.post("/ingest_chunk", status_code=status.HTTP_202_ACCEPTED)
 async def ingest_audio_chunk(

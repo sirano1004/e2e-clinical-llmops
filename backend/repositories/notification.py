@@ -3,7 +3,6 @@ from datetime import datetime
 from typing import List, Optional, Dict, Any
 
 # --- Project Imports ---
-from ..core.redis_client import redis_client
 from ..core.config import settings
 
 # Session TimeOUt
