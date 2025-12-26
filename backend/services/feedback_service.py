@@ -77,7 +77,7 @@ class FeedbackService:
         prev_note = await self.document_service.get_soap_note(session_id)
         session_metadata = await self.session_service.get_session_metadata(session_id)
 
-        history_text = "\n".join([f"{t.role}: {t.content}" for t in history])
+        history_text = [item.model_dump() for item in history]
         prev_note_str = prev_note.model_dump_json(indent=2) if prev_note and task_type != 'soap' else "None"
         
         sys_prompt = get_system_prompt(task_type)
