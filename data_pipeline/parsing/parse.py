@@ -25,13 +25,25 @@ def parse_and_validate_entry(line: str, strict: bool) -> Tuple[dict, dict, list[
         session_id = "unknown"
 
     # history
-    raw_history_str = input_context.get("history", "[]")
+    try:
+        raw_history_str = input_context.get("history", "[]")
+        history_list_raw = json.loads(raw_history_str)
+    except (json.JSONDecodeError, TypeError):
+        history_list_raw = []
     history_list_raw = json.loads(raw_history_str)
     history_list = [validate_data(turn, DialogueTurn) for turn in history_list_raw]
 
     # chosen/rejected
-    chosen_json = validate_data(json.loads(entry.get("chosen", "{}")), SOAPNote)
-    rejected_json = validate_data(json.loads(entry.get("rejected", "{}")), SOAPNote)
+    # Robus parsing
+    def parse_soap_safe(field_name):
+        raw_str = entry.get(field_name, "{}")
+        try:
+            return json.loads(raw_str)
+        except (json.JSONDecodeError, TypeError):
+            return {}
+        
+    chosen_json = validate_data(parse_soap_safe("chosen"), SOAPNote)
+    rejected_json = validate_data(parse_soap_safe("rejected"), SOAPNote)
 
     return entry, input_context, history_list, chosen_json, rejected_json
 

@@ -8,15 +8,15 @@ def process_file(filename: str, strict: bool = True) -> None:
     input_path = os.path.join(settings.data_dir, settings.raw_data_dir, filename)
     output_path = os.path.join(settings.data_dir, settings.parsed_data_dir, filename)
 
-    print(f"입력 경로: {input_path}")
-    print(f"출력 경로: {output_path}")
+    print(f"Input path: {input_path}")
+    print(f"Output path: {output_path}")
 
     if not os.path.exists(input_path):
-        print(f"⏩ 스킵: 파일이 없습니다 ({filename})")
+        print(f"⏩ Skipped: file does not exist ({filename})")
         return
 
     existing_ids = load_existing_ids(output_path)
-    print(f"   ㄴ 기존 데이터: {len(existing_ids)}건 발견")
+    print(f"   ㄴ Found {len(existing_ids)} existing records")
 
     success = skip = fail = 0
 
@@ -38,6 +38,6 @@ def process_file(filename: str, strict: bool = True) -> None:
                 if strict:
                     # strict mode: just drop this entry; keep going
                     continue
-                print(f"❌ 라인 에러 ({filename}): {e}")
+                print(f"❌ Line error ({filename}): {e}")
 
-    print(f"✅ 완료: 신규 추가 {success}건, 중복 스킵 {skip}건, 실패 {fail}건")
+    print(f"✅ Done: added {success}, skipped {skip}, failed {fail}")

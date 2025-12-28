@@ -34,14 +34,11 @@ def filter_soap_items(
 
 
 def format_history_upto(history_list: list[dict], curr_idx: int) -> list[dict]:
-    current_turns = [t for t in history_list if t.get("chunk_index", 0) <= curr_idx]
-    out = []
-    for turn in current_turns:
-        role = (turn.get("role") or "Speaker").upper()
-        content = turn.get("content", "")
-        out.append(
-            ParsedHistoryTurn(
-                role="user",
-                content=f"{role}: {content}"
-            ))
-    return out
+    return [
+    ParsedHistoryTurn(
+        role="user", 
+        content=f"{(turn.get('role') or 'Speaker').upper()}: {turn.get('content', '')}"
+    )
+    for turn in history_list
+    if turn.get("chunk_index", 0) <= curr_idx
+]
