@@ -8,6 +8,7 @@ dependencies = [
     "accelerate>=1.12.0",
     "aiofiles>=25.1.0",
     "celery[redis]>=5.3.1",
+    "datatrove>=0.3.0",
     "dotenv>=0.9.9",
     "en-core-web-lg",
     "fastapi>=0.122.0",

@@ -42,7 +42,7 @@ def parse_and_validate_entry(line: str, strict: bool) -> Tuple[dict, dict, list[
                 raise
             # lenient: drop bad turns
             continue
-
+    
     def parse_soap_safe(field_name: str) -> dict:
         raw_str = entry.get(field_name, "{}")
         try:
@@ -66,17 +66,20 @@ def iter_parsed_records(
     rejected_json: dict,
     existing_ids: set[str],
 ) -> Iterable[dict]:
-    session_id = entry["session_id"]
+    try:
+        patient_id, session_id = entry["patient_id"], entry["session_id"]
+    except KeyError as e:
+        raise ValueError(f"Missing required field: {e.args[0]}")
     max_idx = max_chunk_index(history_list)
-
+    
     for curr_idx in range(max_idx + 1):
-        unique_id = f"{session_id}_{curr_idx}"
+        unique_id = f"{patient_id}_{curr_idx}"
         if unique_id in existing_ids:
             yield None  # signal skip
             continue
 
-        formatted_history = format_history_upto(history_list, curr_idx)
-
+        formatted_history, transcript = format_history_upto(history_list, curr_idx)
+        
         prev_note_obj = filter_soap_items(chosen_json, curr_idx, mode="context")
         prev_note_rej_obj = filter_soap_items(rejected_json, curr_idx, mode="context")
         completion_obj = filter_soap_items(chosen_json, curr_idx, mode="target")
@@ -90,6 +93,7 @@ def iter_parsed_records(
                 task_type=entry.get("task_type", "soap"),
                 system_prompt=input_context.get("system_prompt", ""),
                 history=formatted_history,
+                text=transcript,
                 previous_note=prev_note_obj,
                 previous_note_rejected=prev_note_rej_obj,
                 suffix_prompt=input_context.get("suffix_prompt", ""),

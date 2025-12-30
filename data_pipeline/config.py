@@ -1,11 +1,5 @@
-from pathlib import Path
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field
-
-# Get the folder where THIS file (config.py) lives (i.e., 'backend/')
-BASE_DIR = Path(__file__).resolve().parent.parent
-# Point exactly to the .env file in that folder
-ENV_FILE_PATH = BASE_DIR / ".env"
 
 class Settings(BaseSettings):
     # Code version
@@ -17,6 +11,9 @@ class Settings(BaseSettings):
     # 💡 Folders for each steps
     raw_data_dir: str = Field("logs", alias="RAW_DATA_DIR")
     parsed_data_dir: str = Field("parsed", alias="PARSED_DATA_DIR")
+    dedup_data_dir: str = Field("dedup", alias = "DEDUP_DATA_DIR")
+    hard_dedup_dir: str = Field("hard", alias = "HARD_DEDUP_DATA_DIR")
+    soft_dedup_dir: str = Field("soft", alias = "SOFT_DEDUP_DATA_DIR")
     curated_data_dir: str = Field("curated", alias="CURATED_DATA_DIR")
     ready_data_dir: str = Field("ready", alias="READY_DATA_DIR")
 
@@ -24,14 +21,18 @@ class Settings(BaseSettings):
     sft_file: str = Field("sft_train_data.jsonl", alias="SFT_FILE")
     dpo_file: str = Field("dpo_train_data.jsonl", alias="DPO_FILE")
 
-    # Load from .env file
-    model_config = SettingsConfigDict(
-        env_file=ENV_FILE_PATH,
-        env_ignore_empty=True,
-        extra="ignore"
-    )
+    # Length filter config
+    min_length: int = 500
+
+    # 💡 MinHash Configs
+    dedup_text_key: str = "text"
+    dedup_id_key: str = "id"
+    dedup_date_key: str = "session_start"
+
+    n_gram: int = 4
+    num_buckets: int = 2
+    hashes_per_bucket: int = 4
 
 # Initialize
 settings = Settings()
 print(f"✅ Configuration Loaded")
-print(settings)

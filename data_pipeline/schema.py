@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, date
 from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field, ConfigDict
@@ -26,6 +26,7 @@ class ParsedEntry(BaseModel):
     # Inputs
     system_prompt: str = ""
     history: List[ParsedHistoryTurn] = Field(default_factory=list)
+    text: str = "" # Flattened history content for dedup
     previous_note: Dict[str, Any] = Field(default_factory=dict)
     previous_note_rejected: Dict[str, Any] = Field(default_factory=dict)
     suffix_prompt: str = ""
@@ -39,3 +40,4 @@ class ParsedEntry(BaseModel):
     session_start: Optional[datetime] = None
     created_at: Optional[datetime] = None
     data_pipeline_version: Optional[str] = None
+    pipeline_run_date: datetime = Field(default_factory=date.today)

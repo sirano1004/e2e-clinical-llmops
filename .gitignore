@@ -31,11 +31,19 @@ trt_engine_output/
 trt_lora_checkpoints/
 data/
 logs/
+*.jsonl
 
 # --- Whisper/Audio ---
 *.wav
 *.mp3
 temp_*
+
+# --- Datatrove ---
+*.sig
+*.dups
+*.gz
+*.clusters
+*.remove
 
 # --- Other ---
 *.pem

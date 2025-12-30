@@ -18,12 +18,20 @@ def process_file(filename: str, strict: bool = True) -> None:
     existing_ids = load_existing_ids(output_path)
     print(f"   ㄴ Found {len(existing_ids)} existing records")
 
-    success = skip = fail = 0
+    success = skip = fail = filter = 0
 
     with open(input_path, "r", encoding="utf-8") as fin, open(output_path, "a", encoding="utf-8") as fout:
         for line in fin:
             try:
                 entry, input_context, history_list, chosen_json, rejected_json = parse_and_validate_entry(line, strict=strict)
+
+                # Length filter
+                history_total_length = sum(len(turn.get('content', '')) for turn in history_list)
+                soap_note_total_length = sum(len(item.get('text', '')) for _, v in chosen_json.items() for item in v)
+
+                if history_total_length <= settings.min_length or soap_note_total_length <= settings.min_length:
+                    filter += 1
+                    continue 
 
                 for rec in iter_parsed_records(entry, input_context, history_list, chosen_json, rejected_json, existing_ids):
                     if rec is None:
@@ -40,4 +48,4 @@ def process_file(filename: str, strict: bool = True) -> None:
                     continue
                 print(f"❌ Line error ({filename}): {e}")
 
-    print(f"✅ Done: added {success}, skipped {skip}, failed {fail}")
+    print(f"✅ Done: added {success}, skipped {skip}, failed {fail}, filtered {filter}")

@@ -1,6 +1,7 @@
 from typing import Literal
 
 from ..schema import ParsedHistoryTurn
+from ..utils.normalization import normalize_text
 
 from backend.schemas import SOAPNote
 
@@ -34,7 +35,7 @@ def filter_soap_items(
 
 
 def format_history_upto(history_list: list[dict], curr_idx: int) -> list[dict]:
-    return [
+    formatted_history = [
     ParsedHistoryTurn(
         role="user", 
         content=f"{(turn.get('role') or 'Speaker').upper()}: {turn.get('content', '')}"
@@ -42,3 +43,9 @@ def format_history_upto(history_list: list[dict], curr_idx: int) -> list[dict]:
     for turn in history_list
     if turn.get("chunk_index", 0) <= curr_idx
 ]
+    transcript = ". ".join([normalize_text(turn.get('content', '')) 
+                  for turn in history_list 
+                  if turn.get("chunk_index", 0) <= curr_idx
+                ])
+
+    return formatted_history, transcript
