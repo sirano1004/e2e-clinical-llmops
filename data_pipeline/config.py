@@ -14,8 +14,10 @@ class Settings(BaseSettings):
     dedup_data_dir: str = Field("dedup", alias = "DEDUP_DATA_DIR")
     hard_dedup_dir: str = Field("hard", alias = "HARD_DEDUP_DATA_DIR")
     soft_dedup_dir: str = Field("soft", alias = "SOFT_DEDUP_DATA_DIR")
-    curated_data_dir: str = Field("curated", alias="CURATED_DATA_DIR")
-    ready_data_dir: str = Field("ready", alias="READY_DATA_DIR")
+    qa_dir: str = Field("qa", alias="QA_DATA_DIR")
+    quality_data_dir: str = Field("pass", alias="QUALITY_DATA_DIR")
+    quarantine_data_dir: str = Field("quarantine", alias="QUARANTINE_DATA_DIR")
+    train_data_dir: str = Field("train", alias="TRAIN_DATA_DIR")
 
     # 💡 Filenames for each data type
     sft_file: str = Field("sft_train_data.jsonl", alias="SFT_FILE")
@@ -23,6 +25,8 @@ class Settings(BaseSettings):
 
     # Length filter config
     min_length: int = 500
+    min_ratio: float = 0.1
+    max_ratio: float = 0.8
 
     # 💡 MinHash Configs
     dedup_text_key: str = "text"

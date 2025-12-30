@@ -10,6 +10,7 @@ class ParsedHistoryTurn(BaseModel):
     # you are producing: {"role": "user", "content": "DOCTOR: ..."}
     role: Literal["user", "assistant", "system"] = "user"
     content: str
+    chunk_index: int = Field(0, description="The index of the audio chunk this turn belongs to.")
 
 class ParsedEntry(BaseModel):
     """

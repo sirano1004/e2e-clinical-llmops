@@ -32,6 +32,8 @@ trt_lora_checkpoints/
 data/
 logs/
 *.jsonl
+*.json
+*.parquet
 
 # --- Whisper/Audio ---
 *.wav

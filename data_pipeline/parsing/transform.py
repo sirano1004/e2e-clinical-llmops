@@ -38,7 +38,8 @@ def format_history_upto(history_list: list[dict], curr_idx: int) -> list[dict]:
     formatted_history = [
     ParsedHistoryTurn(
         role="user", 
-        content=f"{(turn.get('role') or 'Speaker').upper()}: {turn.get('content', '')}"
+        content=f"{(turn.get('role') or 'Speaker').upper()}: {turn.get('content', '')}",
+        chunk_index=turn.get("chunk_index", 0)
     )
     for turn in history_list
     if turn.get("chunk_index", 0) <= curr_idx

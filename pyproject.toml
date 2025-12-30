@@ -12,11 +12,14 @@ dependencies = [
     "dotenv>=0.9.9",
     "en-core-web-lg",
     "fastapi>=0.122.0",
+    "nest-asyncio>=1.6.0",
+    "nltk>=3.9.2",
     "numpy<2",
+    "orjson>=3.11.5",
     "outlines>=0.0.46",
     "presidio-analyzer>=2.2.360",
     "presidio-anonymizer>=2.2.360",
-    "pyairports>=0.0.1",
+    "pyairports",
     "pydantic>=2.12.5",
     "pydantic-settings>=2.12.0",
     "pyngrok>=7.5.0",
@@ -37,6 +40,7 @@ dependencies = [
 
 [tool.uv.sources]
 en-core-web-lg = { url = "https://github.com/explosion/spacy-models/releases/download/en_core_web_lg-3.8.0/en_core_web_lg-3.8.0-py3-none-any.whl" }
+pyairports = { git = "https://github.com/NICTA/pyairports.git" }
 
 [dependency-groups]
 dev = [

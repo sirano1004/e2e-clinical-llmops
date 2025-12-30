@@ -29,9 +29,28 @@ def process_file(filename: str, strict: bool = True) -> None:
                 history_total_length = sum(len(turn.get('content', '')) for turn in history_list)
                 soap_note_total_length = sum(len(item.get('text', '')) for _, v in chosen_json.items() for item in v)
 
-                if history_total_length <= settings.min_length or soap_note_total_length <= settings.min_length:
+                if history_total_length <= 0:
                     filter += 1
-                    continue 
+                    continue
+
+                ratio = soap_note_total_length / history_total_length
+
+                drop_reason = None
+
+                if history_total_length <= settings.min_length:
+                    drop_reason = "transcript_too_short"
+
+                elif ratio <= settings.min_ratio:
+                    drop_reason = "soap_too_sparse"
+
+                elif ratio >= settings.max_ratio:
+                    drop_reason = "soap_too_similar"
+
+                if drop_reason:
+                    filter += 1
+                    # optional: metadata / log
+                    # record["drop_reason"] = drop_reason
+                    continue
 
                 for rec in iter_parsed_records(entry, input_context, history_list, chosen_json, rejected_json, existing_ids):
                     if rec is None:
