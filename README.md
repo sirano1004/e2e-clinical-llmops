@@ -1,73 +1,106 @@
-# 🏥 E2E Clinical Scribe Backend (Feature Compete)
+# 🏥 Clinical Scribe Backend (Celery Task Queue Implementation)
 
-> **A High-Performance, Privacy-First Clinical Documentation Backend built for T4 GPUs.**
+> **A Decoupled Backend Architecture using FastAPI and Celery for Single-GPU Environments.**
 
-This project implements a complete **end-to-end LLMOps pipeline** for real-time clinical scribing. It orchestrates state-of-the-art models to transcribe doctor-patient conversations, infer speaker roles, mask sensitive PII, and generate structured SOAP notes incrementally—all optimized to run efficiently on limited hardware resources (e.g., NVIDIA T4).
+This project implements an asynchronous backend for clinical scribing. It uses **FastAPI** as an interface and **Celery** with **Redis** to offload inference tasks. The architecture is optimized for resource-constrained environments (e.g., Single T4 GPU): it runs **ASR and Guardrails on the CPU**, reserving the **GPU exclusively for the LLM (vLLM)** to prevent Out-of-Memory (OOM) errors. Additionally, it integrates a **Data Flywheel** mechanism that captures user feedback (Accept/Edit/Reject) to automatically build SFT/DPO datasets for future model improvements.
 
------
+---
 
-## 🚀 Key Features
+## 🛠 Key Architecture & Features
 
-### 1\. **Real-Time Audio Ingestion Pipeline**
+### 1. **Decoupled Task Queue (Celery + Redis)**
 
-  * **Streaming Support:** Processes audio chunks (30s-60s) continuously via `FastAPI`.
-  * **State-of-the-Art ASR:** Utilizes **WhisperX** with forced alignment for precise word-level timestamps.
-  * **Intelligent Role Inference:** A dedicated lightweight LLM agent tags speakers (Doctor/Patient) based on semantic context, overcoming diarization latency issues.
+* **Non-Blocking API:** The FastAPI backend acts solely as a producer, pushing audio and generation tasks to a Redis broker. This ensures high concurrency handling without blocking the web server.
+* **Serialized Worker:** The Celery worker is configured with `worker_prefetch_multiplier=1`. This enforces strict sequential processing of heavy inference tasks, preventing Out-of-Memory (OOM) errors that typically occur when running vLLM and Whisper concurrently on a single GPU.
 
-### 2\. **Clinical LLM Engine (vLLM Integration)**
+### 2. **Isolated Inference Engine**
 
-  * **High-Throughput Inference:** Integrated **vLLM** (AsyncLLMEngine) directly into the backend for token generation.
-  * **Incremental Updates:** Uses a smart "Delta" logic to append new information to SOAP notes without rewriting the entire history, reducing latency and cost.
-  * **T4 Optimization:** Configured for `int8` quantization and aggressive VRAM management to coexist with ASR and Safety models on a single T4 GPU.
+* **Resource Isolation:** A dedicated Celery worker process manages the GPU lifecycle, loading **vLLM** and **WhisperX** into VRAM independently of the API service.
+* **Async-Sync Bridge:** Implements a custom background event loop within the synchronous worker process to support vLLM's asynchronous generation engine alongside standard synchronous tasks.
 
-### 3\. **Robust Safety & Privacy Guardrails**
+### 3. **Data Flywheel & Feedback Loop**
 
-  * **PII Masking:** **Microsoft Presidio** integration to redact names, IDs, and phone numbers before data storage.
-  * **Hallucination Detection:** Runs a **BERT-based Medical NER** and NLI cross-encoders in background threads to verify generated summaries against the transcript.
-  * **Medical Safety Checks:** Specifically monitors the 'Plan' section for dosage errors or contraindications.
+* **Automated Dataset Curation:** The system captures doctor-in-the-loop interactions (`Accept`, `Edit`, `Reject`) directly from the frontend.
+* **SFT/DPO Formatting:** User corrections are automatically classified and stored as structured training pairs (Transcript ↔ Adjusted Note). This eliminates manual data labeling, creating a pipeline ready for Supervised Fine-Tuning (SFT) or Direct Preference Optimization (DPO).
 
-### 4\. **Feedback Loop & Data Flywheel**
+### 4. **Clinical Safety & Privacy**
 
-  * **RLHF Ready:** Implements an `Accept` / `Reject` / `Edit` workflow for doctors.
-  * **Automatic Routing:** Edits are automatically classified into **SFT** (correction) or **DPO** (preference) datasets based on edit distance logic.
-  * **Redis Analytics:** Tracks similarity scores, rejection rates, and latency metrics in real-time.
+* **Local Guardrails:** Runs **Microsoft Presidio** (PII Masking) and **Biomedical NER/NLI** models locally on the CPU/GPU.
+* **Threaded Verification:** Safety checks run in background threads within the worker to verify medical facts in the generated SOAP note against the transcript.
 
-### 5\. **Async & Event-Driven Architecture**
-
-  * **Non-Blocking Guardrails:** Heavy safety checks run via `BackgroundTasks` and communicate results via **Redis Polling**, ensuring UI responsiveness.
-  * **State Management:** **Redis** is used as the single source of truth for dialogue history, interim states, and atomic metric aggregation.
-
------
+---
 
 ## 🛠️ Architecture Overview
 
 ```mermaid
 graph TD
-    User["Frontend / Doctor"] -->|Audio Chunk| API["FastAPI Backend"]
-    
-    subgraph "Processing Pipeline"
-        API -->|"1. Transcribe"| Whisper["WhisperX (CPU/GPU)"]
-        Whisper -->|"2. Tag Roles"| Role["Role Inference LLM"]
-        Role -->|"3. Mask PII"| PII["Presidio Anonymizer"]
-        PII -->|"4. Generate Note"| vLLM["vLLM Engine (T4 GPU)"]
+    %% --- Client Side ---
+    subgraph "Client Layer"
+        User["Frontend / Doctor"]
+        Poller["State Poller (1s interval)"]
     end
-    
-    subgraph "Async Safety Checks"
-        vLLM -.->|"Output Validation"| Guard["Guardrail Service"]
-        vLLM -.->|"Dosage Check"| Safety["Medical Safety"]
-        
-        Guard -->|"Flag Issues"| Redis
-        Safety -->|"Flag Issues"| Redis
-    end
-    
-    vLLM -->|"Stream Note"| Redis[("Redis State")]
-    Redis -->|Polling / SSE| User
 
-    subgraph "Data Flywheel (RLHF Loop)"
-        User -->|"5. Feedback (Edit/Accept)"| Feedback["Feedback Service"]
-        Feedback -->|"Save Preference Pair"| DB[("S3 / Vector DB")]
-        DB -.->|"Retrain / Fine-tune"| vLLM
+    %% --- API Side (Producer) ---
+    subgraph "API Server (FastAPI)"
+        IngestAPI["POST /ingest"]
+        StateAPI["GET /state"]
+        FeedbackAPI["POST /feedback"]
     end
+
+    %% --- Infrastructure (The Core) ---
+    subgraph "Infrastructure"
+        RedisQueue[("Redis Task Queue")]
+        RedisState[("Redis Session State")]
+        LocalDisk[("Local Storage<br/>(SFT/DPO Flywheel)")]
+    end
+
+    %% --- Worker Side (Consumer) ---
+    subgraph "Inference Worker (Celery)"
+        Worker["Task Consumer (Prefetch=1)"]
+        
+        subgraph "Sequential Pipeline"
+            Whisper["1. WhisperX (ASR)"]
+            Role["2. Role Inference"]
+            PII["3. Presidio (Masking)"]
+            vLLM["4. vLLM (SOAP Gen)"]
+            Guard["5. Guardrail (Validation)"]
+            Safety["6. Safety Check"]
+        end
+    end
+
+    %% === Flow 1: Task Offloading ===
+    User -- "Audio Chunk" --> IngestAPI
+    IngestAPI -- "Push Task" --> RedisQueue
+    
+    %% === Flow 2: Task Processing ===
+    RedisQueue -- "Pop Task" --> Worker
+    Worker --> Whisper
+    Whisper --> Role --> PII --> vLLM
+    
+    %% Async Verification
+    vLLM -.-> Guard
+    vLLM -.-> Safety
+
+    %% === Flow 3: State Sync ===
+    PII -- "Update Transcript" --> RedisState
+    vLLM -- "Stream Note" --> RedisState
+    Guard -- "Flag Warnings" --> RedisState
+    Safety -- "Flag Warnings" --> RedisState
+
+    %% === Flow 4: Polling ===
+    Poller --> StateAPI
+    StateAPI -- "Read State" --> RedisState
+
+    %% === Flow 5: Data Flywheel ===
+    User -- "Feedback (Edit/Accept)" --> FeedbackAPI
+    FeedbackAPI -- "Save Feedback" --> LocalDisk
+    LocalDisk -.-> |"Offline Fine-tuning"| vLLM
+
+    %% Styling
+    style RedisQueue fill:#ff9,stroke:#333,stroke-width:2px
+    style RedisState fill:#ff9,stroke:#333,stroke-width:2px
+    style LocalDisk fill:#d4edda,stroke:#28a745,stroke-width:2px,stroke-dasharray: 5 5
+    style Worker fill:#bbf,stroke:#333,stroke-width:2px
 ```
 
 -----
@@ -78,6 +111,7 @@ graph TD
   * **LLM Serving:** vLLM (AsyncLLMEngine)
   * **ASR:** WhisperX
   * **Database:** Redis (State & Pub/Sub)
+  * **Distributed Task Queue:** Celery + Redis (Broker & State Store).
   * **NLP & Safety:** Spacy, HuggingFace Transformers (BERT/DeBERTa), Microsoft Presidio
   * **Infrastructure:** Optimized for NVIDIA T4 (16GB VRAM)
 
@@ -85,33 +119,11 @@ graph TD
 
 ## 🔮 Future Roadmap
 
-I am actively working on scaling this MVP to a production-grade distributed system.
+I am actively working on evolving this system into a real-time, event-driven microservices architecture.
 
-### 1\. **Observability (Prometheus & Grafana)**
-
-  * Current status: Internal Python-based metric scraping.
-  * **Plan:** Deploy a Prometheus exporter to scrape `vLLM` metrics (throughput, cache usage, queue length) for professional monitoring and alerting.
-
-### 2\. **Distributed Concurrency Control**
-
-  * Current status: Atomic Redis counters.
-  * **Plan:** Implement **Redis Distributed Locks** (Redlock) to safely handle concurrent audio chunks arriving out-of-order or simultaneously in a scaled environment.
-
-### 3\. **Task Queue for CPU-Heavy Loads**
-
-  * Current status: `asyncio.to_thread` within FastAPI.
-  * **Plan:** Offload heavy BERT/NER safety checks to **Celery + RabbitMQ** workers to prevent CPU starvation on the main API server.
-
-### 4\. **Advanced PII Masking Strategy**
-
-  * Current status: High-confidence masking.
-  * **Plan:** Implement a "Medical Safety" masking logic where low-confidence PII scores are marked as `<UNCERTAIN>` rather than ignored, ensuring zero leakage risk.
-
-### 5\. **Frontend Development**
-
-  * Current status: Headless API.
-  * **Plan:** Build a reactive UI (Streamlit) that supports real-time streaming updates, red-lining for guardrail warnings, and an intuitive feedback interface.
-
+* **Real-Time Streaming:** Replace the current HTTP polling mechanism with **WebSockets** or **SSE (Server-Sent Events)** to enable sub-second latency for live transcriptions and guardrail alerts.
+* **Modern Frontend:** Migrate the UI from Streamlit to a **React** (or Next.js) application to support complex clinical workflows, better state management, and a seamless user experience.
+* **Microservices Decomposition:** Break down the current worker architecture into independent microservices (e.g., separated Auth, Guardrails, and Model Serving) for better fault isolation and independent scaling.
 -----
 
 ## ⚠️ Hardware Requirements
@@ -128,36 +140,85 @@ This project is specifically designed and tuned for **Cost-Effective Inference**
 
 ## 🚀 Getting Started
 
-1.  **Prerequisites**
+This project is designed to run in a **Hybrid Environment**: The backend (heavy GPU inference) runs on **Google Colab/Kaggle**, while the frontend (UI) runs on your **Local Machine**.
 
-      * NVIDIA Driver & CUDA 12.1+
-      * Redis Server running locally or remotely.
+### 1. **Clone Repository**
 
-2.  **Installation**
+Start by cloning the repository to your local machine:
 
-    ```bash
-    # Install dependencies using uv (recommended) or pip
-    pip install -r requirements.txt
-    ```
+```bash
+git clone https://github.com/sirano1004/e2e-clinical-llmops.git
+cd e2e-clinical-llmops
 
-3.  **Configuration**
+```
 
-      * Create a `.env` file based on `config.py`:
+### 2. **Configuration (.env)**
 
-    <!-- end list -->
+Create a `.env` file in the root directory by referring to `.env.example`. You will need to upload this file to the remote backend later.
 
-    ```env
-    TARGET_MODEL="unsloth/Llama-3-8b-Instruct"
-    HF_TOKEN="your_huggingface_token"\
-    REDIS_URL="your_redis_url"
-    ```
+```env
+# Example .env
+TARGET_MODEL="unsloth/Llama-3-8b-Instruct"
+HF_TOKEN="your_huggingface_token"
+NGROK_AUTH_TOKEN="your_ngrok_token"
+REDIS_URL="redis://localhost:6379"
 
-4.  **Run Server**
+```
 
-    ```bash
-    uvicorn backend.main:app --host 0.0.0.0 --port 8000
-    ```
+### 3. **Backend Setup (Google Colab / Kaggle)**
 
+The backend requires a GPU (T4/L4). We recommend using the provided notebook.
+
+1. Open `notebooks/colab.ipynb` in Colab or Kaggle.
+2. **Upload your `.env` file** specifically to the **`backend/` directory** (not the root).
+3. **Step 1:** Run the first cell to install dependencies.
+4. **⚠️ IMPORTANT:** After installation, **Restart the Session** (Runtime > Restart Session).
+5. **Step 2:** Run the second cell to start the server.
+6. Copy the **Public URL** provided by Ngrok (e.g., `https://xxxx-xx-xx-xx.ngrok-free.app`).
+
+### 4. **Frontend Setup (Local Machine)**
+
+Run the Streamlit UI locally to interact with the remote backend. This project manages dependencies using `uv`.
+
+1. **Install Dependencies & Activate Venv:**
+```bash
+# Ensure uv is installed (pip install uv)
+uv sync
+
+# Activate the virtual environment
+# MacOS/Linux:
+source .venv/bin/activate
+# Windows:
+# .venv\Scripts\activate
+
+```
+
+
+2. **Run Streamlit:**
+```bash
+streamlit run frontend/app.py
+
+```
+
+
+3. **Connect:**
+* Open the Streamlit app in your browser (usually `http://localhost:8501`).
+* In the sidebar, paste the **Ngrok URL** you copied from Colab into the **"API base URL"** box and click **Apply**.
+
+
+
+### 5. **Run Data Flywheel (Optional)**
+
+To process collected data and generate SFT datasets:
+
+```bash
+# Make the script executable
+chmod +x ./data_pipeline/run_pipeline.sh
+
+# Run the pipeline
+./data_pipeline/run_pipeline.sh
+
+```
 -----
 
 ## 📄 License
