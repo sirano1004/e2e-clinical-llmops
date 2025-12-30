@@ -59,7 +59,7 @@ class Settings(BaseSettings):
     # 6. DATA PATHS
     # ==========================================
 # 💡 Root directory for storing all data
-    data_dir: str = Field("data_storage", alias="DATA_DIR")
+    data_dir: str = Field("data_storage/logs", alias="DATA_DIR")
     
     # 💡 Filenames for each data type
     raw_log_file: str = Field("system_logs.jsonl", alias="RAW_LOG_FILE")

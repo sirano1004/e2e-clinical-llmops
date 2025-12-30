@@ -1,12 +1,9 @@
-import json
-import asyncio
 import re
 from typing import List, Set, Union, Dict, Any
 
 # --- Project Imports ---
 from ..schemas import DialogueTurn
 from ..core.logger import logger
-from ..core.redis_client_sync import redis_client
 from ..core.load_models import get_ner_pipeline, get_nli_pipeline
 # Repositories
 from ..repositories.metrics import MetricsServiceSync
@@ -22,7 +19,7 @@ class GuardrailService:
     than embeddings, and open-source medical cross-encoders are rare.
     """
 
-    def __init__(self, redis_client):
+    def __init__(self, redis_client = None):
         logger.info("🛡️ Initializing Guardrail Services (HF Models)...")
         
         # 1. Load Medical NER Pipeline (Hugging Face)
@@ -50,7 +47,10 @@ class GuardrailService:
             self.nli_model = None
 
         # Metrics Service (Synchronous)
-        self.metrics_service = MetricsServiceSync(redis_client)
+        if redis_client is not None:
+            self.metrics_service = MetricsServiceSync(redis_client)
+        else:
+            self.metrics_service = None
 
     def check_hallucination(self, session_id: str, transcript: List[DialogueTurn], summary: Union[str, dict]) -> List[str]:
         """
