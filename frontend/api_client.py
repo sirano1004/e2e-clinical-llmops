@@ -124,8 +124,8 @@ def start_session_api(doctor_id: str, mrn: str):
         }
         resp = requests.post(f"{api_base}/start_session", data=payload)
         resp.raise_for_status()
-        session_id = resp.json().get("session_id")        
-        return session_id
+
+        return resp.json()
         
     except Exception as e:
         st.error(f"Connection Error: {e}")

@@ -28,6 +28,7 @@ def render_audio_recorder(session_id: str, api_url: str, chunk_duration: int = 3
 
         <script>
             let mediaRecorder;
+            let stream;
             const sessionId = "{session_id}";
             const apiUrl = "{api_url}";
             const chunkDurationMs = {chunk_duration} * 1000;
@@ -59,20 +60,8 @@ def render_audio_recorder(session_id: str, api_url: str, chunk_duration: int = 3
 
             async function startRecording() {{
                 try {{
-                    const stream = await navigator.mediaDevices.getUserMedia({{ audio: true }});
-                    
-                    const mimeType = getBestMimeType();
-                    const options = mimeType ? {{ mimeType }} : undefined;
-                    
-                    console.log(`🎙️ Starting recorder with mimeType: ${{mimeType || "default"}}`);
-                    
-                    mediaRecorder = new MediaRecorder(stream, options);
-                    
-                    mediaRecorder.ondataavailable = (event) => {{
-                        if (event.data.size > 0) processChunk(event.data);
-                    }};
-
-                    mediaRecorder.start();
+                    stream = await navigator.mediaDevices.getUserMedia({{ audio: true }});
+                    setupRecorder(stream);
                     startManualTimer();
 
                     document.getElementById("btn-start").disabled = true;
@@ -87,6 +76,26 @@ def render_audio_recorder(session_id: str, api_url: str, chunk_duration: int = 3
                 }}
             }}
 
+            function setupRecorder(audioStream) {{
+                const mimeType = getBestMimeType();
+                const options = mimeType ? {{ mimeType }} : undefined;
+                
+                mediaRecorder = new MediaRecorder(audioStream, options);
+                
+                mediaRecorder.ondataavailable = (event) => {{
+                    if (event.data.size > 0) processChunk(event.data);
+                }};
+
+                mediaRecorder.start();
+                console.log("🎙️ New Recorder Started (New Header Created)");
+            }}
+            function restartRecording() {{
+                if (mediaRecorder && mediaRecorder.state === "recording") {{
+                    mediaRecorder.stop(); 
+                    
+                    setupRecorder(stream); 
+                }}
+            }}
             function togglePause() {{
                 if (!mediaRecorder) return;
 
@@ -137,7 +146,7 @@ def render_audio_recorder(session_id: str, api_url: str, chunk_duration: int = 3
 
                     if (accumulatedTime >= chunkDurationMs) {{
                         if (mediaRecorder.state === "recording") {{
-                            mediaRecorder.requestData(); 
+                            restartRecording();
                         }}
                         accumulatedTime = 0; 
                     }}
