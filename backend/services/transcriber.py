@@ -120,13 +120,13 @@ class TranscriberService:
     def _format_response(self, result: Dict[str, Any], threshold: float, chunk_index: int) -> Dict[str, Any]:
         """
         Maps raw WhisperX output to our Pydantic schema structure.
-        INCLUDES HEURISTIC MERGE: Combines segments if gap < 0.5s.
+        INCLUDES HEURISTIC MERGE: Combines segments if gap < 0.3s.
         """
         conversation_output = [] 
         raw_segments = []
 
         # --- 1. SMART MERGE LOGIC ---
-        # We assume that if the silence is < 0.5s, it is the same speaker continuing their thought.
+        # We assume that if the silence is < 0.3s, it is the same speaker continuing their thought.
         merged_segments = []
         
         if result["segments"]:
@@ -137,7 +137,7 @@ class TranscriberService:
                 # Calculate silence gap
                 gap = next_seg["start"] - current_seg["end"]
                 
-                if gap < 0.5:
+                if gap < 0.3:
                     # MERGE THEM!
                     # 1. Combine Text
                     current_seg["text"] += " " + next_seg["text"]
