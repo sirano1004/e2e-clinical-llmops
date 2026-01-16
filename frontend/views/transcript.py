@@ -6,7 +6,7 @@ from mock.mock_llm import mock_generate_transcript
 # 💡 Use @st.fragment to isolate this part of the UI.
 # 'run_every=1' automatically re-runs this function every 1 second
 # without reloading the entire page or resetting the editor.
-@st.fragment(run_every=1)
+@st.fragment(run_every=15)
 def render_transcript_view():
     """
     Renders the live transcript area. 

@@ -3,7 +3,7 @@ from components.note_display import render_soap_note_view, render_soap_note_edit
 from mock.mock_llm import mock_generate_note
 from api_client import fetch_soap_note, fetch_warnings
 
-@st.fragment(run_every=1)
+@st.fragment(run_every=15)
 def live_render_soap_note():
     """
     Live rendering of the SOAP note area.
