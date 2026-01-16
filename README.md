@@ -11,11 +11,11 @@ This project implements an asynchronous backend for clinical scribing. It uses *
 ### 1. **Decoupled Task Queue (Celery + Redis)**
 
 * **Non-Blocking API:** The FastAPI backend acts solely as a producer, pushing audio and generation tasks to a Redis broker. This ensures high concurrency handling without blocking the web server.
-* **Serialized Worker:** The Celery worker is configured with `worker_prefetch_multiplier=1`. This enforces strict sequential processing of heavy inference tasks, preventing Out-of-Memory (OOM) errors that typically occur when running vLLM and Whisper concurrently on a single GPU.
+* **Serialized Worker:** The Celery worker is configured with `worker_prefetch_multiplier=1`. This enforces strict sequential processing of heavy inference tasks, preventing Out-of-Memory (OOM) errors that typically occur when running vLLM on a single GPU.
 
 ### 2. **Isolated Inference Engine**
 
-* **Resource Isolation:** A dedicated Celery worker process manages the GPU lifecycle, loading **vLLM** and **WhisperX** into VRAM independently of the API service.
+* **Resource Isolation:** A dedicated Celery worker process manages the GPU lifecycle, loading **vLLM** into VRAM independently of the API service.
 * **Async-Sync Bridge:** Implements a custom background event loop within the synchronous worker process to support vLLM's asynchronous generation engine alongside standard synchronous tasks.
 
 ### 3. **Data Flywheel & Feedback Loop**
@@ -219,8 +219,3 @@ chmod +x ./data_pipeline/run_pipeline.sh
 ./data_pipeline/run_pipeline.sh
 
 ```
------
-
-## 📄 License
-
-[MIT License](https://www.google.com/search?q=LICENSE)
